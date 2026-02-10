@@ -137,7 +137,7 @@
                 submenu: [
                     { icon: <FaChartBar />, label: 'Sales Report', path: 'reports-sales' },
                     { icon: <FaChartBar />, label: 'Payment Report', path: 'reports-payments' },
-                    { icon: <FaChartBar />, label: 'Customer Report', path: 'reports-customers' },
+                    { icon: <FaChartBar />, label: 'Customer Report', path: 'CustomerReport' },
                     { icon: <FaChartBar />, label: 'Product Report', path: 'reports-products' },
                     { icon: <FaChartBar />, label: 'Tax Report', path: 'reports-tax' },
                     { icon: <FaChartBar />, label: 'Profit & Loss', path: 'reports-profit-loss' },
