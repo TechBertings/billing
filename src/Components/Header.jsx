@@ -15,10 +15,10 @@ const Header = ({ toggleSidebar }) => {
       {/* Logo & Title */}
       <div className="flex items-center gap-3">
         <div className="w-9 h-9 bg-blue-600 rounded-lg flex items-center justify-center font-bold text-white text-lg">
-          B
+          D
         </div>
         <h1 className="text-lg font-semibold text-gray-800">
-          Billing System
+          DATS
         </h1>
       </div>
 
@@ -57,19 +57,7 @@ const Header = ({ toggleSidebar }) => {
         {/* Divider */}
         <div className="w-px h-8 bg-gray-200 mx-2" />
 
-        {/* User Profile */}
-        <div className="flex items-center gap-3 hover:bg-gray-50 px-3 py-2 rounded-lg cursor-pointer transition-all duration-200">
-          <div className="hidden md:block text-right">
-            <p className="text-sm font-medium text-gray-800">Admin User</p>
-            <p className="text-xs text-gray-500">Administrator</p>
-          </div>
-          <div className="relative">
-            <div className="w-9 h-9 bg-blue-600 text-white rounded-full flex items-center justify-center font-semibold text-sm">
-              A
-            </div>
-            <div className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-green-500 rounded-full border-2 border-white" />
-          </div>
-        </div>
+ 
       </div>
     </header>
   );

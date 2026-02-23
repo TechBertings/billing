@@ -1,4 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { FaChartLine, FaFileInvoiceDollar, FaUsers, FaMoneyBillWave, FaClock, FaLock } from 'react-icons/fa';
+import Login from './page/LogIn';
 import Header from './Components/Header';
 import Sidebar from './Components/Sidebar';
 import CreateInvoice from './Invoices/CreateInvoice';
@@ -17,23 +19,118 @@ import DraftInvoices from './Invoices/Draftinvoices';
 import AllReceipts from './Receipts/Allreceipts';
 import GenerateReceipt from './Receipts/Generatereceipt';
 import OfficialReceipts from './Receipts/Officialreceipts';
-import { FaChartLine, FaFileInvoiceDollar, FaUsers, FaMoneyBillWave, FaClock } from 'react-icons/fa';
 import CustomerReport from './Reports/CustomerReports';
 import AuditTrail from './Reports/AuditTrail';
-import Maintenance from './Settings/Maintenance';
-
+import Maintenance from './page/SystemSettings/Maintenance';
+import UserManagement from './page/SystemSettings/UserManagement';
+import { canAccessPage, loadPermissionsForRole, clearPermissionsCache } from './Maintenance/RolePermission';
+import ClientProfile from './page/ClientManagement/ClientProfile';
+import ClientProfileList from './page/ClientManagement/ClientProfileList';
+import ClientApproval from './page/Approval/ClientProfileApproval';
 
 function App() {
-  const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [currentPage, setCurrentPage] = useState('dashboard');
+  // Initialize state from localStorage
+  const [isLoggedIn, setIsLoggedIn] = useState(() => {
+    const saved = localStorage.getItem('isLoggedIn');
+    return saved === 'true';
+  });
+  
+  const [currentUser, setCurrentUser] = useState(() => {
+    const saved = localStorage.getItem('currentUser');
+    return saved ? JSON.parse(saved) : null;
+  });
+  
+  const [sidebarOpen, setSidebarOpen] = useState(() => {
+    const saved = localStorage.getItem('sidebarOpen');
+    return saved !== null ? saved === 'true' : true;
+  });
+  
+  const [currentPage, setCurrentPage] = useState(() => {
+    const saved = localStorage.getItem('currentPage');
+    return saved || 'dashboard';
+  });
+
+  // Persist state to localStorage whenever it changes
+  useEffect(() => {
+    localStorage.setItem('isLoggedIn', isLoggedIn);
+  }, [isLoggedIn]);
+
+  useEffect(() => {
+    localStorage.setItem('currentUser', JSON.stringify(currentUser));
+  }, [currentUser]);
+
+  useEffect(() => {
+    localStorage.setItem('sidebarOpen', sidebarOpen);
+  }, [sidebarOpen]);
+
+  useEffect(() => {
+    localStorage.setItem('currentPage', currentPage);
+  }, [currentPage]);
+
+ const handleLogin = async (userData) => {
+  setIsLoggedIn(true);
+  setCurrentUser(userData);
+  await loadPermissionsForRole(userData.role); // ← idagdag ito
+  setCurrentPage('dashboard');
+};
+
+  const handleLogout = () => {
+    clearPermissionsCache();
+    setIsLoggedIn(false);
+    setCurrentUser(null);
+    setCurrentPage('login');
+    // Clear localStorage on logout
+    localStorage.removeItem('isLoggedIn');
+    localStorage.removeItem('currentUser');
+    localStorage.removeItem('currentPage');
+  };
 
   const toggleSidebar = () => {
     setSidebarOpen(!sidebarOpen);
   };
 
   const handleNavigation = (page) => {
-    setCurrentPage(page);
+    // If navigating to login and already logged in, log out first
+    if (page === 'login' && isLoggedIn) {
+      handleLogout();
+    } else if (page === 'login' && !isLoggedIn) {
+      setCurrentPage('login');
+      setIsLoggedIn(false);
+    } else {
+      // Check if user has permission to access this page
+      if (currentUser && !canAccessPage(currentUser.role, page)) {
+        alert('You do not have permission to access this page.');
+        return;
+      }
+      setCurrentPage(page);
+    }
   };
+
+  // Access Denied Component
+  const AccessDenied = () => (
+    <div className="px-6">
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <div className="text-center">
+          <div className="flex items-center justify-center w-24 h-24 mx-auto mb-6 text-red-600 bg-red-100 rounded-full">
+            <FaLock className="text-4xl" />
+          </div>
+          <h2 className="mb-3 text-3xl font-bold text-gray-800">Access Denied</h2>
+          <p className="mb-6 text-gray-600">
+            You do not have permission to access this page.
+          </p>
+          <p className="mb-8 text-sm text-gray-500">
+            Current role: <span className="font-semibold text-gray-700">{currentUser?.role}</span>
+          </p>
+          <button
+            onClick={() => handleNavigation('dashboard')}
+            className="px-6 py-3 text-white transition-colors bg-blue-500 rounded-lg hover:bg-blue-600"
+          >
+            Go to Dashboard
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 
   // Dashboard Component
   const Dashboard = () => {
@@ -48,8 +145,15 @@ function App() {
       <div className="px-6 mx-auto max-w-7xl">
         {/* Welcome Section */}
         <div className="mb-6">
-          <h2 className="mb-1 text-2xl font-semibold text-gray-800">Welcome back, Admin!</h2>
-          <p className="text-sm text-gray-600">Here's what's happening with your business today.</p>
+          <h2 className="mb-1 text-2xl font-semibold text-gray-800">
+            Welcome back, {currentUser?.fullName || currentUser?.username}!
+          </h2>
+          <p className="text-sm text-gray-600">
+            Here's what's happening with your business today.
+            <span className="ml-2 text-xs text-gray-500">
+              (Role: <span className="font-semibold text-blue-600">{currentUser?.role}</span>)
+            </span>
+          </p>
         </div>
 
         {/* Stats Grid */}
@@ -99,30 +203,38 @@ function App() {
           <div className="p-5 bg-white border border-gray-100 rounded-lg shadow-sm">
             <h3 className="mb-4 text-lg font-semibold text-gray-800">Quick Actions</h3>
             <div className="grid grid-cols-2 gap-3">
-              <button
-                onClick={() => handleNavigation('create-invoice')}
-                className="p-4 text-sm font-medium text-gray-700 transition-all duration-200 border border-gray-200 rounded-lg bg-gray-50 hover:bg-blue-50 hover:border-blue-300 hover:text-blue-600"
-              >
-                New Invoice
-              </button>
-              <button
-                onClick={() => handleNavigation('customers-add')}
-                className="p-4 text-sm font-medium text-gray-700 transition-all duration-200 border border-gray-200 rounded-lg bg-gray-50 hover:bg-blue-50 hover:border-blue-300 hover:text-blue-600"
-              >
-                Add Customer
-              </button>
-              <button
-                onClick={() => handleNavigation('reports-sales')}
-                className="p-4 text-sm font-medium text-gray-700 transition-all duration-200 border border-gray-200 rounded-lg bg-gray-50 hover:bg-blue-50 hover:border-blue-300 hover:text-blue-600"
-              >
-                View Reports
-              </button>
-              <button
-                onClick={() => handleNavigation('settings-general')}
-                className="p-4 text-sm font-medium text-gray-700 transition-all duration-200 border border-gray-200 rounded-lg bg-gray-50 hover:bg-blue-50 hover:border-blue-300 hover:text-blue-600"
-              >
-                Settings
-              </button>
+              {canAccessPage(currentUser?.role, 'create-invoice') && (
+                <button
+                  onClick={() => handleNavigation('create-invoice')}
+                  className="p-4 text-sm font-medium text-gray-700 transition-all duration-200 border border-gray-200 rounded-lg bg-gray-50 hover:bg-blue-50 hover:border-blue-300 hover:text-blue-600"
+                >
+                  New Invoice
+                </button>
+              )}
+              {canAccessPage(currentUser?.role, 'customers-add') && (
+                <button
+                  onClick={() => handleNavigation('customers-add')}
+                  className="p-4 text-sm font-medium text-gray-700 transition-all duration-200 border border-gray-200 rounded-lg bg-gray-50 hover:bg-blue-50 hover:border-blue-300 hover:text-blue-600"
+                >
+                  Add Customer
+                </button>
+              )}
+              {canAccessPage(currentUser?.role, 'reports-sales') && (
+                <button
+                  onClick={() => handleNavigation('reports-sales')}
+                  className="p-4 text-sm font-medium text-gray-700 transition-all duration-200 border border-gray-200 rounded-lg bg-gray-50 hover:bg-blue-50 hover:border-blue-300 hover:text-blue-600"
+                >
+                  View Reports
+                </button>
+              )}
+              {canAccessPage(currentUser?.role, 'UserManagement') && (
+                <button
+                  onClick={() => handleNavigation('UserManagement')}
+                  className="p-4 text-sm font-medium text-gray-700 transition-all duration-200 border border-gray-200 rounded-lg bg-gray-50 hover:bg-blue-50 hover:border-blue-300 hover:text-blue-600"
+                >
+                  Manage Users
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -132,6 +244,21 @@ function App() {
 
   // Render page content based on currentPage state
   const renderPage = () => {
+    // If on login page, show login regardless of auth state
+    if (currentPage === 'login') {
+      return <Login onLogin={handleLogin} />;
+    }
+
+    // For all other pages, check if logged in
+    if (!isLoggedIn) {
+      return <Login onLogin={handleLogin} />;
+    }
+
+    // Check permission before rendering page
+    if (!canAccessPage(currentUser?.role, currentPage)) {
+      return <AccessDenied />;
+    }
+
     switch (currentPage) {
       case 'dashboard':
         return <Dashboard />;
@@ -165,6 +292,17 @@ function App() {
 
       case 'Maintenance':
         return <Maintenance />;
+
+      // User Management Page (now in Settings)
+      case 'UserManagement':
+        return <UserManagement />;
+        
+      case 'ClientProfile':
+        return <ClientProfile />;
+      case 'ClientProfileList':
+        return <ClientProfileList />;
+      case 'ClientApproval':
+        return <ClientApproval />;
 
       // Reports Pages
       case 'CustomerReport':
@@ -260,13 +398,25 @@ function App() {
     }
   };
 
+  // If not logged in and not on login page, show login
+  if (!isLoggedIn && currentPage !== 'login') {
+    return <Login onLogin={handleLogin} />;
+  }
+
+  // If on login page, just show login component
+  if (currentPage === 'login') {
+    return <Login onLogin={handleLogin} />;
+  }
+
+  // Main app layout (when logged in)
   return (
     <div className="min-h-screen bg-gray-50">
-      <Header toggleSidebar={toggleSidebar} />
+      <Header toggleSidebar={toggleSidebar} currentUser={currentUser} onLogout={handleLogout} />
       <Sidebar
         isOpen={sidebarOpen}
         onNavigate={handleNavigation}
         currentPage={currentPage}
+        currentUser={currentUser}
       />
 
       {/* Main Content */}
