@@ -1,482 +1,645 @@
 import React, { useState, useEffect } from 'react';
-import { FaMapMarkerAlt, FaPhone, FaEnvelope, FaBuilding, FaPaperPlane, FaTimes, FaIdCard } from 'react-icons/fa';
+import { FaPaperPlane, FaTimes, FaChevronRight, FaChevronLeft, FaCheck } from 'react-icons/fa';
 import { supabase } from '../../lib/supabaseClient';
 
-export default function ClientProfile() {
-    const [formData, setFormData] = useState({
-        customer_id: '',
-        company_name: '',
-        customer_type: 'SME',
-        contact_person: '',
-        email_address: '',
-        mobile_number: '',
-        tin_number: '',
-        region: '',
-        province: '',
-        city: '',
-        district: '',
-        street: '',
-        address: '',
-        zip_code: ''
-    });
+// ─── INITIAL STATE ────────────────────────────────────────────────────────────
+const initialForm = {
+  client_id_number: '',
+  date_of_coverage: '',
+  month_of_coverage: '',
+  status: '',
+  business_registration: '',
+  line_of_business: '',
+  business_name: '',
+  trade_name: '',
+  tax_type: '',
+  source_of_income: '',
+  tax_payer_classification: '',
+  business_registration_numbers: '',
+  tin: '',
+  sec_registration_no: '',
+  date_of_incorporation: '',
+  dti_registration: '',
+  date_of_expiration: '',
+  sss_employer_no: '',
+  phic_employer_no: '',
+  hdmf_employer_no: '',
+  corporation_signatory_type: '',
+  sole_proprietor_signatory_type: '',
+  registered_business_address: '',
+  renting: 'No',
+  renting_vat_type: '',
+  rdo: '',
+  district: '',
+  zip_code: '',
+  google_map_location: '',
+  fathers_name: '',
+  mothers_maiden_name: '',
+  marital_status: '',
+  date_of_birth: '',
+  citizenship: '',
+  gender: '',
+  present_home_address: '',
+  permanent_home_address: '',
+  personal_email_address: '',
+  contact_information: '',
+  contact_person: '',
+  designation: '',
+  email_address: '',
+  contact_number: '',
+  official_office_contact_number: '',
+  entity_type: '',
+};
 
-    const [loading, setLoading] = useState(false);
-    const [message, setMessage] = useState('');
-    const [messageType, setMessageType] = useState('');
+const STEPS = [
+  { id: 1, label: 'Coverage & Status' },
+  { id: 2, label: 'Business Info' },
+  { id: 3, label: 'Tax & Registration' },
+  { id: 4, label: 'Address & Location' },
+  { id: 5, label: 'Owner Details' },
+  { id: 6, label: 'Contact Info' },
+];
 
-    const customerTypes = ['Single Proprietorship', 'SME', 'Corporation'];
-    const regions = ['NCR', 'Calabarzon', 'SOCCSKSARGEN', 'Davao Region', 'Ilocos Region', 'Cagayan Valley', 'Central Luzon', 'Bicol Region', 'Western Visayas', 'Central Visayas', 'Eastern Visayas', 'Zamboanga Peninsula', 'Northern Mindanao', 'ARMM', 'CARAGA'];
+const genID = () => {
+  const ts = Date.now().toString().slice(-6);
+  const rand = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
+  return `CLIENT-${ts}-${rand}`;
+};
 
-    // Auto-generate Customer ID
-    useEffect(() => {
-        const generateCustomerID = () => {
-            const timestamp = Date.now().toString().slice(-6);
-            const random = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
-            return `CUST-${timestamp}-${random}`;
-        };
-        setFormData(prev => ({ ...prev, customer_id: generateCustomerID() }));
-    }, []);
+const formatTIN = (val) => {
+  let f = val.replace(/[^0-9]/g, '').slice(0, 12);
+  if (f.length > 9) f = `${f.slice(0,3)}-${f.slice(3,6)}-${f.slice(6,9)}-${f.slice(9)}`;
+  else if (f.length > 6) f = `${f.slice(0,3)}-${f.slice(3,6)}-${f.slice(6)}`;
+  else if (f.length > 3) f = `${f.slice(0,3)}-${f.slice(3)}`;
+  return f;
+};
 
-    // Auto-fill address based on location fields
-    useEffect(() => {
-        const autoFillAddress = () => {
-            const parts = [
-                formData.street,
-                formData.district,
-                formData.city,
-                formData.province,
-                formData.region,
-                formData.zip_code
-            ].filter(part => part && part.trim() !== '');
+const inputCls = "w-full px-4 py-2.5 text-sm border-2 rounded-lg border-slate-200 focus:border-teal-500 focus:outline-none transition bg-white text-slate-800 placeholder-slate-400";
+const selectCls = "w-full px-4 py-2.5 text-sm border-2 rounded-lg border-slate-200 focus:border-teal-500 focus:outline-none transition bg-white text-slate-800 cursor-pointer";
 
-            const fullAddress = parts.length > 0 ? parts.join(', ') : '';
-            setFormData(prev => ({ ...prev, address: fullAddress }));
-        };
+const Field = ({ label, children, span2 }) => (
+  <div className={span2 ? 'md:col-span-2' : ''}>
+    <label className="block mb-1.5 text-xs font-semibold tracking-wide uppercase text-slate-500">
+      {label}
+    </label>
+    {children}
+  </div>
+);
 
-        autoFillAddress();
-    }, [formData.street, formData.district, formData.city, formData.province, formData.region, formData.zip_code]);
-
-    const handleInputChange = (e) => {
-        const { name, value } = e.target;
-        
-        // Auto-format TIN number with hyphens
-        if (name === 'tin_number') {
-            let formatted = value.replace(/[^0-9]/g, ''); // Remove non-digits
-            formatted = formatted.slice(0, 12); // Limit to 12 digits maximum
-            
-            if (formatted.length > 0) {
-                if (formatted.length <= 3) {
-                    formatted = formatted;
-                } else if (formatted.length <= 6) {
-                    formatted = formatted.slice(0, 3) + '-' + formatted.slice(3);
-                } else if (formatted.length <= 9) {
-                    formatted = formatted.slice(0, 3) + '-' + formatted.slice(3, 6) + '-' + formatted.slice(6);
-                } else if (formatted.length <= 12) {
-                    formatted = formatted.slice(0, 3) + '-' + formatted.slice(3, 6) + '-' + formatted.slice(6, 9) + '-' + formatted.slice(9, 12);
-                }
-            }
-            setFormData(prev => ({ ...prev, [name]: formatted }));
-        } else {
-            setFormData(prev => ({ ...prev, [name]: value }));
-        }
-    };
-
-    const handleSubmit = async (e) => {
-        e.preventDefault();
-        setLoading(true);
-        setMessage('');
-
-        try {
-            // Validate required fields
-            if (!formData.company_name.trim() || !formData.contact_person.trim() || !formData.email_address.trim() || !formData.mobile_number.trim() || !formData.tin_number.trim()) {
-                setMessage('Please fill in all required fields');
-                setMessageType('error');
-                setLoading(false);
-                return;
-            }
-
-            // Validate email format
-            const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-            if (!emailRegex.test(formData.email_address)) {
-                setMessage('Please enter a valid email address');
-                setMessageType('error');
-                setLoading(false);
-                return;
-            }
-
-            // Validate TIN format (12 digits with hyphens: XXX-XXX-XXX-XXXX)
-            const tinRegex = /^\d{3}-\d{3}-\d{3}-\d{3}$/;
-            if (!tinRegex.test(formData.tin_number)) {
-                setMessage('TIN format should be: XXX-XXX-XXX-XXXX (12 digits)');
-                setMessageType('error');
-                setLoading(false);
-                return;
-            }
-
-            // Insert to Supabase pending table
-            const { data, error } = await supabase
-                .from('client_profile')
-                .insert([
-                    {
-                        customer_id: formData.customer_id,
-                        company_name: formData.company_name.trim(),
-                        customer_type: formData.customer_type,
-                        contact_person: formData.contact_person.trim(),
-                        email_address: formData.email_address.trim(),
-                        mobile_number: formData.mobile_number.trim(),
-                        tin_number: formData.tin_number,
-                        region: formData.region,
-                        province: formData.province.trim(),
-                        city: formData.city.trim(),
-                        district: formData.district.trim(),
-                        street: formData.street.trim(),
-                        address: formData.address,
-                        zip_code: formData.zip_code.trim(),
-                        status: 'pending',
-                        created_at: new Date().toISOString()
-                    }
-                ])
-                .select();
-
-            if (error) throw error;
-
-            setMessage(`✅ Client profile submitted for approval! Customer ID: ${formData.customer_id}`);
-            setMessageType('success');
-            
-            // Reset form after 2 seconds
-            setTimeout(() => {
-                const newID = `CUST-${Date.now().toString().slice(-6)}-${Math.floor(Math.random() * 10000).toString().padStart(4, '0')}`;
-                setFormData({
-                    customer_id: newID,
-                    company_name: '',
-                    customer_type: 'SME',
-                    contact_person: '',
-                    email_address: '',
-                    mobile_number: '',
-                    tin_number: '',
-                    region: '',
-                    province: '',
-                    city: '',
-                    district: '',
-                    street: '',
-                    address: '',
-                    zip_code: ''
-                });
-                setMessage('');
-            }, 2000);
-        } catch (error) {
-            setMessage(`❌ Error: ${error.message}`);
-            setMessageType('error');
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    const handleReset = () => {
-        const newID = `CUST-${Date.now().toString().slice(-6)}-${Math.floor(Math.random() * 10000).toString().padStart(4, '0')}`;
-        setFormData({
-            customer_id: newID,
-            company_name: '',
-            customer_type: 'SME',
-            contact_person: '',
-            email_address: '',
-            mobile_number: '',
-            tin_number: '',
-            region: '',
-            province: '',
-            city: '',
-            district: '',
-            street: '',
-            address: '',
-            zip_code: ''
-        });
-        setMessage('');
-    };
-
-    return (
-        <div className="min-h-screen p-6 bg-gradient-to-br from-slate-50 to-slate-100">
-            <div className="max-w-4xl mx-auto">
-                {/* Header */}
-                <div className="mb-8">
-                    <h1 className="mb-2 text-4xl font-bold text-slate-900">Client Profile</h1>
-                    <p className="text-slate-600">Create and submit client information for approval</p>
-                </div>
-
-                {/* Form Container */}
-                <div className="p-8 bg-white shadow-lg rounded-xl">
-                    {/* Message Alert */}
-                    {message && (
-                        <div className={`mb-6 p-4 rounded-lg border-l-4 ${
-                            messageType === 'success' 
-                                ? 'bg-green-50 border-green-500 text-green-700' 
-                                : 'bg-red-50 border-red-500 text-red-700'
-                        }`}>
-                            {message}
-                        </div>
-                    )}
-
-                    <form onSubmit={handleSubmit}>
-                        {/* Customer ID Section */}
-                        <div className="p-5 mb-8 border-2 border-blue-200 rounded-lg bg-gradient-to-r from-blue-50 to-indigo-50">
-                            <label className="block mb-3 text-xs font-semibold tracking-wide uppercase text-slate-700">
-                                Customer ID (Auto Generated)
-                            </label>
-                            <input
-                                type="text"
-                                value={formData.customer_id}
-                                disabled
-                                className="w-full px-4 py-3 font-semibold text-blue-600 bg-white border-2 border-blue-300 rounded-lg cursor-not-allowed focus:outline-none"
-                            />
-                        </div>
-
-                        {/* Basic Info Section */}
-                        <h3 className="flex items-center gap-2 mt-8 mb-4 text-lg font-semibold text-slate-900">
-                            <FaBuilding className="text-blue-600" />
-                            Basic Information
-                        </h3>
-                        
-                        <div className="grid grid-cols-1 gap-6 mb-8 md:grid-cols-2">
-                            {/* Company Name */}
-                            <div>
-                                <label className="block mb-2 text-sm font-semibold text-slate-700">
-                                    Company Name <span className="text-red-500">*</span>
-                                </label>
-                                <input
-                                    type="text"
-                                    name="company_name"
-                                    value={formData.company_name}
-                                    onChange={handleInputChange}
-                                    placeholder="Enter company name"
-                                    required
-                                    className="w-full px-4 py-3 transition border-2 rounded-lg border-slate-300 focus:border-blue-500 focus:outline-none"
-                                />
-                            </div>
-
-                            {/* Customer Type */}
-                            <div>
-                                <label className="block mb-2 text-sm font-semibold text-slate-700">
-                                    Customer Type <span className="text-red-500">*</span>
-                                </label>
-                                <select
-                                    name="customer_type"
-                                    value={formData.customer_type}
-                                    onChange={handleInputChange}
-                                    className="w-full px-4 py-3 transition border-2 rounded-lg cursor-pointer border-slate-300 focus:border-blue-500 focus:outline-none"
-                                >
-                                    {customerTypes.map(type => (
-                                        <option key={type} value={type}>{type}</option>
-                                    ))}
-                                </select>
-                            </div>
-
-                            {/* TIN Number */}
-                            <div className="md:col-span-2">
-                                <label className="block mb-2 text-sm font-semibold text-slate-700">
-                                    TIN Number <span className="text-red-500">*</span>
-                                </label>
-                                <input
-                                    type="text"
-                                    name="tin_number"
-                                    value={formData.tin_number}
-                                    onChange={handleInputChange}
-                                    placeholder="XXX-XXX-XXX-XXXX"
-                                    required
-                                    maxLength="16"
-                                    className="w-full px-4 py-3 font-mono transition border-2 rounded-lg border-slate-300 focus:border-blue-500 focus:outline-none"
-                                />
-                                <p className="mt-1 text-xs text-slate-500">Format: XXX-XXX-XXX-XXXX (12 digits total, auto-formatted)</p>
-                            </div>
-                        </div>
-
-                        {/* Contact Information Section */}
-                        <h3 className="flex items-center gap-2 mt-8 mb-4 text-lg font-semibold text-slate-900">
-                            <FaEnvelope className="text-blue-600" />
-                            Contact Information
-                        </h3>
-                        
-                        <div className="grid grid-cols-1 gap-6 mb-8 md:grid-cols-3">
-                            {/* Contact Person */}
-                            <div>
-                                <label className="block mb-2 text-sm font-semibold text-slate-700">
-                                    Contact Person <span className="text-red-500">*</span>
-                                </label>
-                                <input
-                                    type="text"
-                                    name="contact_person"
-                                    value={formData.contact_person}
-                                    onChange={handleInputChange}
-                                    placeholder="Enter contact person name"
-                                    required
-                                    className="w-full px-4 py-3 transition border-2 rounded-lg border-slate-300 focus:border-blue-500 focus:outline-none"
-                                />
-                            </div>
-
-                            {/* Email */}
-                            <div>
-                                <label className="block mb-2 text-sm font-semibold text-slate-700">
-                                    Email Address <span className="text-red-500">*</span>
-                                </label>
-                                <input
-                                    type="email"
-                                    name="email_address"
-                                    value={formData.email_address}
-                                    onChange={handleInputChange}
-                                    placeholder="Enter email address"
-                                    required
-                                    className="w-full px-4 py-3 transition border-2 rounded-lg border-slate-300 focus:border-blue-500 focus:outline-none"
-                                />
-                            </div>
-
-                            {/* Mobile Number */}
-                            <div>
-                                <label className="block mb-2 text-sm font-semibold text-slate-700">
-                                    Mobile Number <span className="text-red-500">*</span>
-                                </label>
-                                <input
-                                    type="tel"
-                                    name="mobile_number"
-                                    value={formData.mobile_number}
-                                    onChange={handleInputChange}
-                                    placeholder="Enter mobile number"
-                                    required
-                                    className="w-full px-4 py-3 transition border-2 rounded-lg border-slate-300 focus:border-blue-500 focus:outline-none"
-                                />
-                            </div>
-                        </div>
-
-                        {/* Address Section */}
-                        <h3 className="flex items-center gap-2 mt-8 mb-4 text-lg font-semibold text-slate-900">
-                            <FaMapMarkerAlt className="text-blue-600" />
-                            Address Information
-                        </h3>
-                        
-                        <div className="grid grid-cols-1 gap-6 mb-8 md:grid-cols-2">
-                            {/* Region */}
-                            <div>
-                                <label className="block mb-2 text-sm font-semibold text-slate-700">
-                                    Region
-                                </label>
-                                <select
-                                    name="region"
-                                    value={formData.region}
-                                    onChange={handleInputChange}
-                                    className="w-full px-4 py-3 transition border-2 rounded-lg cursor-pointer border-slate-300 focus:border-blue-500 focus:outline-none"
-                                >
-                                    <option value="">Select Region</option>
-                                    {regions.map(region => (
-                                        <option key={region} value={region}>{region}</option>
-                                    ))}
-                                </select>
-                            </div>
-
-                            {/* Province */}
-                            <div>
-                                <label className="block mb-2 text-sm font-semibold text-slate-700">
-                                    Province
-                                </label>
-                                <input
-                                    type="text"
-                                    name="province"
-                                    value={formData.province}
-                                    onChange={handleInputChange}
-                                    placeholder="Enter province"
-                                    className="w-full px-4 py-3 transition border-2 rounded-lg border-slate-300 focus:border-blue-500 focus:outline-none"
-                                />
-                            </div>
-
-                            {/* City */}
-                            <div>
-                                <label className="block mb-2 text-sm font-semibold text-slate-700">
-                                    City
-                                </label>
-                                <input
-                                    type="text"
-                                    name="city"
-                                    value={formData.city}
-                                    onChange={handleInputChange}
-                                    placeholder="Enter city"
-                                    className="w-full px-4 py-3 transition border-2 rounded-lg border-slate-300 focus:border-blue-500 focus:outline-none"
-                                />
-                            </div>
-
-                            {/* District */}
-                            <div>
-                                <label className="block mb-2 text-sm font-semibold text-slate-700">
-                                    District
-                                </label>
-                                <input
-                                    type="text"
-                                    name="district"
-                                    value={formData.district}
-                                    onChange={handleInputChange}
-                                    placeholder="Enter district"
-                                    className="w-full px-4 py-3 transition border-2 rounded-lg border-slate-300 focus:border-blue-500 focus:outline-none"
-                                />
-                            </div>
-
-                            {/* Street */}
-                            <div>
-                                <label className="block mb-2 text-sm font-semibold text-slate-700">
-                                    Street
-                                </label>
-                                <input
-                                    type="text"
-                                    name="street"
-                                    value={formData.street}
-                                    onChange={handleInputChange}
-                                    placeholder="Enter street address"
-                                    className="w-full px-4 py-3 transition border-2 rounded-lg border-slate-300 focus:border-blue-500 focus:outline-none"
-                                />
-                            </div>
-
-                            {/* Zip Code */}
-                            <div>
-                                <label className="block mb-2 text-sm font-semibold text-slate-700">
-                                    Zip Code
-                                </label>
-                                <input
-                                    type="text"
-                                    name="zip_code"
-                                    value={formData.zip_code}
-                                    onChange={handleInputChange}
-                                    placeholder="Enter zip code"
-                                    className="w-full px-4 py-3 transition border-2 rounded-lg border-slate-300 focus:border-blue-500 focus:outline-none"
-                                />
-                            </div>
-                        </div>
-
-                        {/* Full Address (Auto-filled) */}
-                        <div className="mb-8">
-                            <label className="block mb-2 text-sm font-semibold text-slate-700">
-                                Complete Address (Auto-filled)
-                            </label>
-                            <textarea
-                                value={formData.address}
-                                disabled
-                                className="w-full px-4 py-3 border-2 rounded-lg cursor-not-allowed border-slate-300 bg-slate-100 text-slate-600 focus:outline-none resize-vertical min-h-24"
-                            />
-                        </div>
-
-                        {/* Buttons */}
-                        <div className="flex gap-4 mt-10">
-                            <button
-                                type="button"
-                                onClick={handleReset}
-                                className="flex items-center justify-center flex-1 gap-2 px-6 py-3 font-semibold transition duration-200 rounded-lg bg-slate-200 hover:bg-slate-300 text-slate-800"
-                            >
-                                <FaTimes /> Reset
-                            </button>
-                            <button
-                                type="submit"
-                                disabled={loading}
-                                className="flex items-center justify-center flex-1 gap-2 px-6 py-3 font-semibold text-white transition duration-200 rounded-lg bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                            >
-                                <FaPaperPlane /> {loading ? 'Submitting...' : 'Submit for Approval'}
-                            </button>
-                        </div>
-                    </form>
-                </div>
-            </div>
+const RadioGroup = ({ name, value, onChange, options }) => (
+  <div className="flex flex-col gap-2 mt-1">
+    {options.map(opt => (
+      <label key={opt} className="flex items-center gap-3 cursor-pointer group">
+        <div onClick={() => onChange({ target: { name, value: opt } })}
+          className={`w-4 h-4 rounded-full border-2 flex items-center justify-center transition cursor-pointer
+            ${value === opt ? 'border-teal-500 bg-teal-500' : 'border-slate-300 group-hover:border-teal-400'}`}>
+          {value === opt && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
         </div>
-    );
+        <span className="text-sm text-slate-700">{opt}</span>
+      </label>
+    ))}
+  </div>
+);
+
+const StepBar = ({ current }) => (
+  <div className="flex items-center gap-0 px-6 py-4 mb-8 overflow-x-auto bg-slate-900 rounded-xl">
+    {STEPS.map((step, idx) => {
+      const done = current > step.id;
+      const active = current === step.id;
+      return (
+        <React.Fragment key={step.id}>
+          <div className="flex items-center gap-2 whitespace-nowrap">
+            <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold transition-all
+              ${done ? 'bg-teal-500 text-white' : active ? 'bg-teal-400 text-slate-900' : 'bg-slate-700 text-slate-400'}`}>
+              {done ? <FaCheck size={10} /> : step.id}
+            </div>
+            <span className={`text-sm font-medium transition-all
+              ${done ? 'text-teal-400' : active ? 'text-white' : 'text-slate-500'}`}>
+              {step.label}
+            </span>
+          </div>
+          {idx < STEPS.length - 1 && (
+            <FaChevronRight className="flex-shrink-0 mx-3 text-slate-600" size={10} />
+          )}
+        </React.Fragment>
+      );
+    })}
+  </div>
+);
+
+export default function ClientProfile() {
+  const [formData, setFormData] = useState({ ...initialForm, client_id_number: genID() });
+  const [step, setStep] = useState(1);
+  const [loading, setLoading] = useState(false);
+  const [message, setMessage] = useState('');
+  const [messageType, setMessageType] = useState('');
+
+  // ── Map state ──
+  const [mapInput, setMapInput] = useState('');
+  const [mapQuery, setMapQuery] = useState('Philippines');
+
+  const [dropdowns, setDropdowns] = useState({
+    status: [],
+    business_registration: [],
+    line_of_business: [],
+    tax_type: [],
+    source_of_income: [],
+    tax_payer_classification: [],
+  });
+  const [ddLoading, setDdLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchDropdowns = async () => {
+      setDdLoading(true);
+      try {
+        const [stat, br, lob, tt, soi, tpc] = await Promise.all([
+          supabase.from('status').select('id, status').order('id'),
+          supabase.from('business_registration').select('id, business_registration').order('id'),
+          supabase.from('line_of_business').select('id, line_of_business').order('id'),
+          supabase.from('tax_type').select('id, tax_type').order('id'),
+          supabase.from('source_of_income').select('id, source_of_income').order('id'),
+          supabase.from('tax_payer_classification').select('id, tax_payer_classification').order('id'),
+        ]);
+        setDropdowns({
+          status: stat.data || [],
+          business_registration: br.data || [],
+          line_of_business: lob.data || [],
+          tax_type: tt.data || [],
+          source_of_income: soi.data || [],
+          tax_payer_classification: tpc.data || [],
+        });
+      } catch (err) {
+        console.error('Failed to load dropdowns', err);
+      } finally {
+        setDdLoading(false);
+      }
+    };
+    fetchDropdowns();
+  }, []);
+
+  const handleChange = (e) => {
+    const { name, value, type, checked } = e.target;
+    if (type === 'checkbox') {
+      setFormData(p => ({ ...p, [name]: checked ? 'Yes' : 'No' }));
+    } else if (name === 'tin') {
+      setFormData(p => ({ ...p, tin: formatTIN(value) }));
+    } else {
+      setFormData(p => ({ ...p, [name]: value }));
+    }
+  };
+
+  // ── Map search handler ──
+  const handleMapSearch = () => {
+    if (!mapInput.trim()) return;
+    setMapQuery(mapInput.trim());
+    setFormData(p => ({ ...p, google_map_location: mapInput.trim() }));
+  };
+
+  const handleReset = () => {
+    setFormData({ ...initialForm, client_id_number: genID() });
+    setMapInput('');
+    setMapQuery('Philippines');
+    setStep(1);
+    setMessage('');
+  };
+
+  const handleSubmit = async () => {
+    setLoading(true);
+    setMessage('');
+    try {
+      const { error } = await supabase.from('client_profile').insert([{
+        client_id: formData.client_id_number,
+        date_of_coverage: formData.date_of_coverage || null,
+        month_of_coverage: formData.month_of_coverage || null,
+        status: formData.status,
+        business_registration: formData.business_registration,
+        line_of_business: formData.line_of_business,
+        business_name: formData.business_name,
+        trade_name: formData.trade_name,
+        tax_type: formData.tax_type,
+        source_of_income: formData.source_of_income,
+        tax_payer_classification: formData.tax_payer_classification,
+        business_registration_numbers: formData.business_registration_numbers,
+        tin: formData.tin,
+        sec_registration_no: formData.sec_registration_no,
+        date_of_incorporation: formData.date_of_incorporation || null,
+        dti_registration: formData.dti_registration,
+        date_of_expiration: formData.date_of_expiration || null,
+        sss_employer_no: formData.sss_employer_no,
+        phic_employer_no: formData.phic_employer_no,
+        hdmf_employer_no: formData.hdmf_employer_no,
+        corporation_signatory_type: formData.corporation_signatory_type,
+        sole_proprietor_signatory_type: formData.sole_proprietor_signatory_type,
+        registered_business_address: formData.registered_business_address,
+        renting: formData.renting,
+        renting_vat_type: formData.renting_vat_type || null,
+        rdo: formData.rdo,
+        district: formData.district,
+        zip_code: formData.zip_code,
+        google_map_location: formData.google_map_location,
+        fathers_name: formData.fathers_name,
+        mothers_maiden_name: formData.mothers_maiden_name,
+        marital_status: formData.marital_status,
+        date_of_birth: formData.date_of_birth || null,
+        citizenship: formData.citizenship,
+        gender: formData.gender,
+        present_home_address: formData.present_home_address,
+        permanent_home_address: formData.permanent_home_address,
+        personal_email_address: formData.personal_email_address,
+        contact_information: formData.contact_information,
+        contact_person: formData.contact_person,
+        designation: formData.designation,
+        email_address: formData.email_address,
+        contact_number: formData.contact_number,
+        official_office_contact_number: formData.official_office_contact_number,
+        created_at: new Date().toISOString(),
+      }]);
+      if (error) throw error;
+      setMessage(`✅ Client profile submitted! ID: ${formData.client_id_number}`);
+      setMessageType('success');
+      setTimeout(() => handleReset(), 2500);
+    } catch (err) {
+      setMessage(`❌ Error: ${err.message}`);
+      setMessageType('error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const renderStep = () => {
+    switch (step) {
+      case 1: return (
+        <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+          <Field label="Client ID Number" span2>
+            <input type="text" value={formData.client_id_number} disabled
+              className="w-full px-4 py-2.5 text-sm font-mono font-semibold text-teal-600 bg-teal-50 border-2 border-teal-200 rounded-lg cursor-not-allowed" />
+          </Field>
+          <Field label="Date of Coverage">
+            <input type="date" name="date_of_coverage" value={formData.date_of_coverage} onChange={handleChange} className={inputCls} />
+          </Field>
+          <Field label="Month of Coverage">
+            <input type="date" name="month_of_coverage" value={formData.month_of_coverage} onChange={handleChange} className={inputCls} />
+          </Field>
+          <Field label="Status" span2>
+            <select name="status" value={formData.status} onChange={handleChange} className={selectCls} disabled={ddLoading}>
+              <option value="">— Select Status —</option>
+              {dropdowns.status.map(o => <option key={o.id} value={o.status}>{o.status}</option>)}
+            </select>
+          </Field>
+        </div>
+      );
+
+      case 2: return (
+        <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+          <Field label="Business Registration">
+            <select name="business_registration" value={formData.business_registration} onChange={handleChange} className={selectCls} disabled={ddLoading}>
+              <option value="">— Select —</option>
+              {dropdowns.business_registration.map(o => <option key={o.id} value={o.business_registration}>{o.business_registration}</option>)}
+            </select>
+          </Field>
+          <Field label="Line of Business">
+            <select name="line_of_business" value={formData.line_of_business} onChange={handleChange} className={selectCls} disabled={ddLoading}>
+              <option value="">— Select —</option>
+              {dropdowns.line_of_business.map(o => <option key={o.id} value={o.line_of_business}>{o.line_of_business}</option>)}
+            </select>
+          </Field>
+          <Field label="Business Name">
+            <input type="text" name="business_name" value={formData.business_name} onChange={handleChange} placeholder="Enter business name" className={inputCls} />
+          </Field>
+          <Field label="Trade Name">
+            <input type="text" name="trade_name" value={formData.trade_name} onChange={handleChange} placeholder="Enter trade name" className={inputCls} />
+          </Field>
+          <Field label="Tax Type">
+            <select name="tax_type" value={formData.tax_type} onChange={handleChange} className={selectCls} disabled={ddLoading}>
+              <option value="">— Select —</option>
+              {dropdowns.tax_type.map(o => <option key={o.id} value={o.tax_type}>{o.tax_type}</option>)}
+            </select>
+          </Field>
+          <Field label="Source of Income">
+            <select name="source_of_income" value={formData.source_of_income} onChange={handleChange} className={selectCls} disabled={ddLoading}>
+              <option value="">— Select —</option>
+              {dropdowns.source_of_income.map(o => <option key={o.id} value={o.source_of_income}>{o.source_of_income}</option>)}
+            </select>
+          </Field>
+          <Field label="Tax Payer Classification (RA 11976)" span2>
+            <select name="tax_payer_classification" value={formData.tax_payer_classification} onChange={handleChange} className={selectCls} disabled={ddLoading}>
+              <option value="">— Select —</option>
+              {dropdowns.tax_payer_classification.map(o => <option key={o.id} value={o.tax_payer_classification}>{o.tax_payer_classification}</option>)}
+            </select>
+          </Field>
+        </div>
+      );
+
+      case 3: return (
+        <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+          <Field label="Business Registration Numbers">
+            <input type="text" name="business_registration_numbers" value={formData.business_registration_numbers} onChange={handleChange} placeholder="Enter registration numbers" className={inputCls} />
+          </Field>
+          <Field label="TIN">
+            <input type="text" name="tin" value={formData.tin} onChange={handleChange} placeholder="XXX-XXX-XXX-XXX" maxLength="16" className={`${inputCls} font-mono`} />
+          </Field>
+          <Field label="SEC Registration No.">
+            <input type="text" name="sec_registration_no" value={formData.sec_registration_no} onChange={handleChange} placeholder="Enter SEC no." className={inputCls} />
+          </Field>
+          <Field label="Date of Incorporation">
+            <input type="date" name="date_of_incorporation" value={formData.date_of_incorporation} onChange={handleChange} className={inputCls} />
+          </Field>
+          <Field label="DTI Registration">
+            <input type="text" name="dti_registration" value={formData.dti_registration} onChange={handleChange} placeholder="Enter DTI registration" className={inputCls} />
+          </Field>
+          <Field label="Date of Expiration">
+            <input type="date" name="date_of_expiration" value={formData.date_of_expiration} onChange={handleChange} className={inputCls} />
+          </Field>
+          <Field label="SSS Employer No.">
+            <input type="text" name="sss_employer_no" value={formData.sss_employer_no} onChange={handleChange} placeholder="Enter SSS no." className={inputCls} />
+          </Field>
+          <Field label="PHIC Employer No.">
+            <input type="text" name="phic_employer_no" value={formData.phic_employer_no} onChange={handleChange} placeholder="Enter PHIC no." className={inputCls} />
+          </Field>
+          <Field label="HDMF Employer No." span2>
+            <input type="text" name="hdmf_employer_no" value={formData.hdmf_employer_no} onChange={handleChange} placeholder="Enter HDMF no." className={inputCls} />
+          </Field>
+        </div>
+      );
+
+      case 4: return (
+        <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+          <Field label="Registered Business Address" span2>
+            <input type="text" name="registered_business_address" value={formData.registered_business_address} onChange={handleChange} placeholder="Enter registered business address" className={inputCls} />
+          </Field>
+          <Field label="Renting" span2>
+            <div className="flex items-center gap-6 mt-1">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input type="checkbox" name="renting" checked={formData.renting === 'Yes'} onChange={handleChange} className="w-4 h-4 accent-teal-500" />
+                <span className="text-sm text-slate-700">Yes, currently renting</span>
+              </label>
+              {formData.renting === 'Yes' && (
+                <select name="renting_vat_type" value={formData.renting_vat_type} onChange={handleChange}
+                  className="flex-1 px-3 py-2 text-sm bg-white border-2 rounded-lg border-slate-200 focus:border-teal-500 focus:outline-none">
+                  <option value="">— VAT Type —</option>
+                  {['Net of VAT', 'VAT', 'Withholding'].map(o => <option key={o}>{o}</option>)}
+                </select>
+              )}
+            </div>
+          </Field>
+          <Field label="RDO">
+            <input type="text" name="rdo" value={formData.rdo} onChange={handleChange} placeholder="Enter RDO" className={inputCls} />
+          </Field>
+          <Field label="District">
+            <input type="text" name="district" value={formData.district} onChange={handleChange} placeholder="Enter district" className={inputCls} />
+          </Field>
+          <Field label="Zip Code">
+            <input type="text" name="zip_code" value={formData.zip_code} onChange={handleChange} placeholder="Enter zip code" className={inputCls} />
+          </Field>
+
+          {/* ── Embedded Map ── */}
+          <Field label="Office Location (Map)" span2>
+            <div className="overflow-hidden border-2 border-slate-200 rounded-xl">
+              {/* Search Bar */}
+              <div className="flex gap-2 p-3 border-b bg-slate-50 border-slate-200">
+                <input
+                  type="text"
+                  value={mapInput}
+                  onChange={(e) => setMapInput(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') handleMapSearch(); }}
+                  placeholder="Type address then press Enter or click Search..."
+                  className="flex-1 px-3 py-2 text-sm transition border-2 rounded-lg border-slate-200 focus:border-teal-500 focus:outline-none"
+                />
+                <button
+                  type="button"
+                  onClick={handleMapSearch}
+                  className="px-4 py-2 text-sm font-semibold text-white transition bg-teal-500 rounded-lg hover:bg-teal-600 whitespace-nowrap"
+                >
+                  Search
+                </button>
+                {formData.google_map_location && (
+                  <a
+                    href={`https://maps.google.com/maps?q=${encodeURIComponent(formData.google_map_location)}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="px-4 py-2 text-sm font-semibold text-teal-600 transition border-2 border-teal-200 rounded-lg hover:bg-teal-50 whitespace-nowrap"
+                  >
+                    Open ↗
+                  </a>
+                )}
+              </div>
+
+              {/* Map iframe */}
+              <iframe
+                key={mapQuery}
+                src={`https://maps.google.com/maps?q=${encodeURIComponent(mapQuery)}&output=embed&z=16`}
+                width="100%"
+                height="350"
+                style={{ border: 0 }}
+                allowFullScreen
+                loading="lazy"
+                referrerPolicy="no-referrer-when-downgrade"
+                title="Office Location Map"
+              />
+
+              {/* Footer */}
+              <div className="flex items-center justify-between px-4 py-2 border-t bg-slate-50 border-slate-200">
+                <p className="text-xs text-slate-400">
+                  💡 Type an address above then press <strong>Enter</strong> or click <strong>Search</strong>
+                </p>
+                {formData.google_map_location && (
+                  <span className="text-xs font-semibold text-teal-600">
+                    📍 {formData.google_map_location}
+                  </span>
+                )}
+              </div>
+            </div>
+          </Field>
+        </div>
+      );
+
+      case 5: return (
+        <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+          {/* Entity Type Selector */}
+          <Field label="Entity Type" span2>
+            <div className="flex gap-4 mt-1">
+              {['Corporation', 'Sole Proprietor'].map((type) => (
+                <label key={type} onClick={() => setFormData(p => ({ ...p, entity_type: type }))}
+                  className={`flex items-center gap-3 px-5 py-3 rounded-xl border-2 cursor-pointer transition-all
+                    ${formData.entity_type === type
+                      ? 'border-teal-500 bg-teal-50 text-teal-700'
+                      : 'border-slate-200 hover:border-slate-300 text-slate-600'}`}>
+                  <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center transition
+                    ${formData.entity_type === type ? 'border-teal-500 bg-teal-500' : 'border-slate-300'}`}>
+                    {formData.entity_type === type && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
+                  </div>
+                  <span className="text-sm font-semibold">{type}</span>
+                </label>
+              ))}
+            </div>
+          </Field>
+
+          {/* ── CORPORATION ── */}
+          {formData.entity_type === 'Corporation' && (
+            <Field label="Signatory Type" span2>
+              <RadioGroup
+                name="corporation_signatory_type"
+                value={formData.corporation_signatory_type}
+                onChange={handleChange}
+                options={['Annual Meeting President', 'Corporate Secretary (Signatory)']}
+              />
+            </Field>
+          )}
+
+          {/* ── SOLE PROPRIETOR ── */}
+          {formData.entity_type === 'Sole Proprietor' && (
+            <>
+              <Field label="Signatory Type" span2>
+                <RadioGroup
+                  name="sole_proprietor_signatory_type"
+                  value={formData.sole_proprietor_signatory_type}
+                  onChange={handleChange}
+                  options={['Owner', 'Authorized Representative']}
+                />
+              </Field>
+              <Field label="Father's Name">
+                <input type="text" name="fathers_name" value={formData.fathers_name}
+                  onChange={handleChange} placeholder="Enter father's name" className={inputCls} />
+              </Field>
+              <Field label="Mother's Maiden Name">
+                <input type="text" name="mothers_maiden_name" value={formData.mothers_maiden_name}
+                  onChange={handleChange} placeholder="Enter mother's maiden name" className={inputCls} />
+              </Field>
+              <Field label="Marital Status">
+                <input type="text" name="marital_status" value={formData.marital_status}
+                  onChange={handleChange} placeholder="Single / Married / Widowed" className={inputCls} />
+              </Field>
+              <Field label="Date of Birth">
+                <input type="date" name="date_of_birth" value={formData.date_of_birth}
+                  onChange={handleChange} className={inputCls} />
+              </Field>
+              <Field label="Citizenship">
+                <input type="text" name="citizenship" value={formData.citizenship}
+                  onChange={handleChange} placeholder="Enter citizenship" className={inputCls} />
+              </Field>
+              <Field label="Gender">
+                <input type="text" name="gender" value={formData.gender}
+                  onChange={handleChange} placeholder="Enter gender" className={inputCls} />
+              </Field>
+              <Field label="Present Home Address" span2>
+                <input type="text" name="present_home_address" value={formData.present_home_address}
+                  onChange={handleChange} placeholder="Enter present home address" className={inputCls} />
+              </Field>
+              <Field label="Permanent Home Address" span2>
+                <input type="text" name="permanent_home_address" value={formData.permanent_home_address}
+                  onChange={handleChange} placeholder="Enter permanent home address" className={inputCls} />
+              </Field>
+              <Field label="Personal Email Address" span2>
+                <input type="email" name="personal_email_address" value={formData.personal_email_address}
+                  onChange={handleChange} placeholder="personal@email.com" className={inputCls} />
+              </Field>
+            </>
+          )}
+
+          {/* Walang napili pa */}
+          {!formData.entity_type && (
+            <div className="py-10 text-sm text-center md:col-span-2 text-slate-400">
+              ⚠️ Please select an entity type above to continue.
+            </div>
+          )}
+        </div>
+      );
+
+      case 6: return (
+        <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+          <Field label="Contact Information">
+            <input type="text" name="contact_information" value={formData.contact_information} onChange={handleChange} placeholder="Enter contact information" className={inputCls} />
+          </Field>
+          <Field label="Contact Person">
+            <input type="text" name="contact_person" value={formData.contact_person} onChange={handleChange} placeholder="Enter contact person name" className={inputCls} />
+          </Field>
+          <Field label="Designation">
+            <input type="text" name="designation" value={formData.designation} onChange={handleChange} placeholder="Enter designation" className={inputCls} />
+          </Field>
+          <Field label="Email Address">
+            <input type="email" name="email_address" value={formData.email_address} onChange={handleChange} placeholder="office@email.com" className={inputCls} />
+          </Field>
+          <Field label="Contact Number">
+            <input type="tel" name="contact_number" value={formData.contact_number} onChange={handleChange} placeholder="Enter contact number" className={inputCls} />
+          </Field>
+          <Field label="Official Office Contact Number">
+            <input type="tel" name="official_office_contact_number" value={formData.official_office_contact_number} onChange={handleChange} placeholder="Enter office contact number" className={inputCls} />
+          </Field>
+        </div>
+      );
+
+      default: return null;
+    }
+  };
+
+  const isLastStep = step === STEPS.length;
+  const isFirstStep = step === 1;
+
+  return (
+    <div className="min-h-screen p-6 bg-gradient-to-br from-slate-50 to-slate-100">
+      <div className="max-w-5xl mx-auto">
+        <div className="mb-6">
+          <h1 className="text-3xl font-bold text-slate-900">Client Profile</h1>
+          <p className="mt-1 text-sm text-slate-500">Complete all steps to submit client information for approval</p>
+        </div>
+
+        <StepBar current={step} />
+
+        <div className="overflow-hidden bg-white shadow-lg rounded-xl">
+          {/* Step Title Bar */}
+          <div className="flex items-center justify-between px-8 py-4 bg-slate-900">
+            <div>
+              <span className="text-xs font-semibold tracking-widest text-teal-400 uppercase">Step {step} of {STEPS.length}</span>
+              <h2 className="text-white font-semibold text-lg mt-0.5">{STEPS[step - 1].label}</h2>
+            </div>
+            <div className="flex gap-1">
+              {STEPS.map(s => (
+                <div key={s.id} className={`h-1.5 w-8 rounded-full transition-all
+                  ${s.id < step ? 'bg-teal-500' : s.id === step ? 'bg-teal-400' : 'bg-slate-700'}`} />
+              ))}
+            </div>
+          </div>
+
+          <div className="p-8">
+            {message && (
+              <div className={`mb-6 p-4 rounded-lg border-l-4 text-sm
+                ${messageType === 'success' ? 'bg-green-50 border-green-500 text-green-700' : 'bg-red-50 border-red-500 text-red-700'}`}>
+                {message}
+              </div>
+            )}
+
+            {renderStep()}
+
+            {/* Navigation */}
+            <div className="flex gap-4 pt-6 mt-10 border-t border-slate-100">
+              <button type="button" onClick={handleReset}
+                className="flex items-center gap-2 px-5 py-2.5 text-sm font-semibold rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 transition">
+                <FaTimes size={12} /> Reset
+              </button>
+
+              <div className="flex gap-3 ml-auto">
+                {!isFirstStep && (
+                  <button type="button" onClick={() => setStep(s => s - 1)}
+                    className="flex items-center gap-2 px-6 py-2.5 text-sm font-semibold rounded-lg border-2 border-slate-200 hover:border-slate-300 text-slate-700 transition">
+                    <FaChevronLeft size={11} /> Back
+                  </button>
+                )}
+                {!isLastStep ? (
+                  <button type="button" onClick={() => setStep(s => s + 1)}
+                    className="flex items-center gap-2 px-6 py-2.5 text-sm font-semibold rounded-lg bg-slate-900 hover:bg-slate-800 text-white transition">
+                    Next <FaChevronRight size={11} />
+                  </button>
+                ) : (
+                  <button type="button" onClick={handleSubmit} disabled={loading}
+                    className="flex items-center gap-2 px-8 py-2.5 text-sm font-semibold rounded-lg bg-gradient-to-r from-teal-500 to-teal-600 hover:from-teal-600 hover:to-teal-700 text-white transition disabled:opacity-50 disabled:cursor-not-allowed">
+                    <FaPaperPlane size={12} /> {loading ? 'Submitting...' : 'Submit for Approval'}
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 }

@@ -3,10 +3,16 @@ import { ArrowLeft, HelpCircle } from "lucide-react";
 import SecretQuestions from "../../Maintenance/SecretQuestion"
 import RolePermissions from "../../Maintenance/RolePermission";
 import UserRole from "../../Maintenance/UserRole";
+import Status from "../../Maintenance/Status";
+import TaxType from "../../Maintenance/TaxType";
+import BusinessRegistration from "../../Maintenance/BusinessRegistration";
+import LineOfBusiness from "../../Maintenance/LineOfBusiness";
+import SourceOfIncome from "../../Maintenance/SourceOfIncome";
+import TaxPayerClassification from "../../Maintenance/TaxPayerClassification";
 
 const Maintenance = () => {
   const [selectedModule, setSelectedModule] = useState(null);
-  const [selectedRole, setSelectedRole] = useState(null); // ✅ ADD THIS
+  const [selectedRole, setSelectedRole] = useState(null);
   const [sortBy, setSortBy] = useState("all");
 
   const modules = [
@@ -22,7 +28,42 @@ const Maintenance = () => {
       description: "Manage Your User's Role",
       icon: HelpCircle,
     },
-    // Remove RolePermissions from modules list since it's now accessed via UserRole
+    {
+      id: "Status",
+      name: "Status",
+      description: "Manage Your User's Status",
+      icon: HelpCircle,
+    },
+     {
+      id: "TaxType",
+      name: "Tax Type",
+      description: "Manage Your User's Tax Type",
+      icon: HelpCircle,
+    },
+       {
+      id: "BusinessRegistration",
+      name: "Business Registration",
+      description: "Manage Your User's Business Registration",
+      icon: HelpCircle,
+    },
+      {
+      id: "LineOfBusiness",
+      name: "Line of Business",
+      description: "Manage Your User's Line of Business",
+      icon: HelpCircle,
+    },
+     {
+      id: "SourceOfIncome",
+      name: "Source of Income",
+      description: "Manage Your User's Source of Income",
+      icon: HelpCircle,
+    },
+     {
+      id: "TaxPayerClassification",
+      name: "Tax Payer Classification",
+      description: "Manage Your User's Tax Payer Classification",
+      icon: HelpCircle,
+    },
   ];
 
   const filteredModules =
@@ -30,14 +71,11 @@ const Maintenance = () => {
       ? modules
       : modules.filter((m) => m.id === sortBy);
 
-  // ✅ ADD THIS FUNCTION
   const handleManagePermissions = (role) => {
-    console.log('Managing permissions for role:', role); // Debug
     setSelectedRole(role);
     setSelectedModule("RolePermissions");
   };
 
-  // ✅ ADD THIS FUNCTION
   const handleBackToRoles = () => {
     setSelectedRole(null);
     setSelectedModule("UserRole");
@@ -49,13 +87,32 @@ const Maintenance = () => {
         return <SecretQuestions />;
       case "RolePermissions":
         return (
-          <RolePermissions 
-            selectedRole={selectedRole} 
-            onClose={handleBackToRoles} 
+          <RolePermissions
+            selectedRole={selectedRole}
+            onClose={handleBackToRoles}
           />
         );
       case "UserRole":
-        return <UserRole onManagePermissions={handleManagePermissions} />; // ✅ PASS THE PROP
+        return <UserRole onManagePermissions={handleManagePermissions} />;
+        
+      case "Status":
+        return <Status />;
+        
+      case "TaxType":
+        return <TaxType />;
+        
+      case "BusinessRegistration":
+        return <BusinessRegistration />;
+        
+      case "LineOfBusiness":
+        return <LineOfBusiness />;
+        
+      case "SourceOfIncome":
+        return <SourceOfIncome />;
+        
+      case "TaxPayerClassification":
+        return <TaxPayerClassification />;
+        
       default:
         return null;
     }
@@ -69,7 +126,7 @@ const Maintenance = () => {
           <button
             onClick={() => {
               setSelectedModule(null);
-              setSelectedRole(null); // ✅ CLEAR SELECTED ROLE
+              setSelectedRole(null);
             }}
             className="flex items-center gap-2 px-4 py-2 mb-8 text-sm font-semibold text-blue-600 transition-all bg-white border border-blue-100 rounded-lg hover:bg-blue-50"
           >

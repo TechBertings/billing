@@ -6,10 +6,6 @@ import Sidebar from './Components/Sidebar';
 import CreateInvoice from './Invoices/CreateInvoice';
 import CreateCustomer from './Customer/Createcustomer';
 import CustomerList from './Customer/Customerlist';
-import AddProduct from './Products/AddProduct';
-import ProductList from './Products/Productlist';
-import Inventory from './Products/Inventory';
-import Categories from './Products/Categories';
 import CustomerGroups from './Customer/CustomerGroups';
 import AllInvoices from './Invoices/AllInvoices';
 import Status from './Invoices/InvoicesByStatus';
@@ -269,14 +265,6 @@ function App() {
         return <CreateCustomer />;
       case 'customers-all':
         return <CustomerList />;
-      case 'AddProduct':
-        return <AddProduct />;
-      case 'ProductList':
-        return <ProductList />;
-      case 'Inventory':
-        return <Inventory />;
-      case 'Categories':
-        return <Categories />;
       case 'CustomerGroups':
         return <CustomerGroups />;
 
@@ -349,15 +337,6 @@ function App() {
           </div>
         );
 
-      case 'products-all':
-        return (
-          <div className="px-6">
-            <h2 className="mb-4 text-2xl font-bold text-gray-800">All Products</h2>
-            <div className="p-8 text-center bg-white border border-gray-100 rounded-lg shadow-sm">
-              <p className="text-gray-600">All Products page - Coming soon!</p>
-            </div>
-          </div>
-        );
 
       case 'reports-sales':
         return (
