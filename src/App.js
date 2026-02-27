@@ -23,6 +23,7 @@ import { canAccessPage, loadPermissionsForRole, clearPermissionsCache } from './
 import ClientProfile from './page/ClientManagement/ClientProfile';
 import ClientProfileList from './page/ClientManagement/ClientProfileList';
 import ClientApproval from './page/Approval/ClientProfileApproval';
+import EmployeeProfile from './page/ClientManagement/EmployeeProfile';
 
 function App() {
   // Initialize state from localStorage
@@ -291,6 +292,8 @@ function App() {
         return <ClientProfileList />;
       case 'ClientApproval':
         return <ClientApproval />;
+          case 'EmployeeProfile':
+        return <EmployeeProfile />;
 
       // Reports Pages
       case 'CustomerReport':

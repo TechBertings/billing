@@ -27,7 +27,6 @@ import {
   userRoleAPI,
 } from "../../lib/supabaseClient";
 import Swal from "sweetalert2";
-// ✅ FIX: Correct import paths
 import UserRole from "../../Maintenance/UserRole";
 import RolePermissions from "../../Maintenance/RolePermission";
 
@@ -486,8 +485,8 @@ function UserManagement() {
       </div>
 
       {/* Search and Filters */}
-      <div className="mb-6 bg-white p-5 rounded-lg shadow-sm border border-gray-200">
-        <div className="flex gap-4 items-center">
+      <div className="p-5 mb-6 bg-white border border-gray-200 rounded-lg shadow-sm">
+        <div className="flex items-center gap-4">
           <div className="relative flex-1">
             <FaSearch className="absolute left-3 top-3.5 text-gray-400" />
             <input
@@ -562,30 +561,30 @@ function UserManagement() {
       {/* Users Grid */}
       {isLoading ? (
         <div className="flex items-center justify-center py-20">
-          <FaSync className="animate-spin text-3xl text-blue-600 mr-3" />
+          <FaSync className="mr-3 text-3xl text-blue-600 animate-spin" />
           <span className="text-lg text-gray-600">Loading...</span>
         </div>
       ) : filteredUsers.length === 0 ? (
-        <div className="text-center py-20 bg-white rounded-lg border border-gray-200">
+        <div className="py-20 text-center bg-white border border-gray-200 rounded-lg">
           <p className="text-gray-500">No users found</p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
+        <div className="grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-4">
           {filteredUsers.map((user) => (
             <div
               key={user.id}
-              className="bg-white border border-gray-200 rounded-lg shadow-sm hover:shadow-md transition-shadow overflow-hidden"
+              className="overflow-hidden transition-shadow bg-white border border-gray-200 rounded-lg shadow-sm hover:shadow-md"
             >
               <div className="p-6 text-center">
-                <div className="mb-4 flex justify-center">
+                <div className="flex justify-center mb-4">
                   {user.image_url ? (
                     <img
                       src={user.image_url}
                       alt={user.full_name}
-                      className="w-24 h-24 rounded-full object-cover border-4 border-gray-100"
+                      className="object-cover w-24 h-24 border-4 border-gray-100 rounded-full"
                     />
                   ) : (
-                    <div className="w-24 h-24 bg-blue-500 text-white rounded-full flex items-center justify-center text-2xl font-bold border-4 border-gray-100">
+                    <div className="flex items-center justify-center w-24 h-24 text-2xl font-bold text-white bg-blue-500 border-4 border-gray-100 rounded-full">
                       {user.full_name
                         .split(" ")
                         .map((n) => n[0])
@@ -595,7 +594,7 @@ function UserManagement() {
                   )}
                 </div>
 
-                <div className="mb-3 flex justify-center">
+                <div className="flex justify-center mb-3">
                   <span
                     className={`inline-flex items-center gap-1 px-3 py-1 text-xs font-semibold rounded-full ${
                       user.status === "Active"
@@ -610,7 +609,7 @@ function UserManagement() {
                   </span>
                 </div>
 
-                <h3 className="text-lg font-bold text-gray-900 mb-1">
+                <h3 className="mb-1 text-lg font-bold text-gray-900">
                   {user.full_name}
                 </h3>
 
@@ -618,18 +617,18 @@ function UserManagement() {
                   {user.role}
                 </p>
 
-                {/* <p className="text-xs text-gray-500 mb-4">{user.email}</p> */}
+                {/* <p className="mb-4 text-xs text-gray-500">{user.email}</p> */}
 
                 <div className="flex gap-2">
                   <button
                     onClick={() => openModal("edit", user)}
-                    className="flex-1 flex items-center justify-center gap-2 px-4 py-2 text-sm font-semibold text-white bg-blue-600 rounded-lg hover:bg-blue-700"
+                    className="flex items-center justify-center flex-1 gap-2 px-4 py-2 text-sm font-semibold text-white bg-blue-600 rounded-lg hover:bg-blue-700"
                   >
                     <FaEdit /> Edit
                   </button>
                   <button
                     onClick={() => openUserActionsModal(user)}
-                    className="p-2 text-gray-600 hover:bg-gray-100 rounded-lg"
+                    className="p-2 text-gray-600 rounded-lg hover:bg-gray-100"
                     title="More Options"
                   >
                     <FaEllipsisV />
@@ -645,7 +644,7 @@ function UserManagement() {
       {showModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black bg-opacity-50">
           <div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto bg-white rounded-lg">
-            <div className="flex items-center justify-between p-6 border-b sticky top-0 bg-white">
+            <div className="sticky top-0 flex items-center justify-between p-6 bg-white border-b">
               <h3 className="text-xl font-bold">
                 {modalMode === "add"
                   ? "Add User"
@@ -663,7 +662,7 @@ function UserManagement() {
 
             <form onSubmit={handleSubmit} className="p-6">
               {error && (
-                <div className="mb-4 p-4 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg">
+                <div className="p-4 mb-4 text-sm text-red-600 border border-red-200 rounded-lg bg-red-50">
                   {error}
                 </div>
               )}
@@ -675,14 +674,14 @@ function UserManagement() {
                     <img
                       src={imagePreview}
                       alt="Preview"
-                      className="w-32 h-32 rounded-full object-cover mb-4 border-4 border-gray-100"
+                      className="object-cover w-32 h-32 mb-4 border-4 border-gray-100 rounded-full"
                     />
                   ) : (
-                    <div className="w-32 h-32 bg-gray-200 rounded-full flex items-center justify-center mb-4">
+                    <div className="flex items-center justify-center w-32 h-32 mb-4 bg-gray-200 rounded-full">
                       <FaImage className="text-4xl text-gray-400" />
                     </div>
                   )}
-                  <label className="cursor-pointer px-4 py-2 text-sm bg-gray-100 rounded-lg hover:bg-gray-200">
+                  <label className="px-4 py-2 text-sm bg-gray-100 rounded-lg cursor-pointer hover:bg-gray-200">
                     <FaImage className="inline mr-2" />
                     {imagePreview ? "Change Image" : "Upload Image"}
                     <input
@@ -695,7 +694,7 @@ function UserManagement() {
                   <p className="mt-2 text-xs text-gray-500">Max size: 2MB</p>
                 </div>
 
-                <div className="grid md:grid-cols-2 gap-4">
+                <div className="grid gap-4 md:grid-cols-2">
                   {[
                     {
                       name: "username",
@@ -737,7 +736,7 @@ function UserManagement() {
                       </label>
                       <div className="relative">
                         {field.icon && (
-                          <field.icon className="absolute left-3 top-3 text-gray-400" />
+                          <field.icon className="absolute text-gray-400 left-3 top-3" />
                         )}
                         <input
                           type={
@@ -766,7 +765,7 @@ function UserManagement() {
                           <button
                             type="button"
                             onClick={() => setShowPassword(!showPassword)}
-                            className="absolute right-3 top-3 text-gray-400"
+                            className="absolute text-gray-400 right-3 top-3"
                           >
                             {showPassword ? <FaEyeSlash /> : <FaEye />}
                           </button>
@@ -856,7 +855,7 @@ function UserManagement() {
                 <div>
                   <label className="block mb-2 text-sm font-medium">
                     Security Answer
-                    <span className="ml-2 text-xs text-gray-400 font-normal">
+                    <span className="ml-2 text-xs font-normal text-gray-400">
                       (auto-filled)
                     </span>
                   </label>
@@ -918,10 +917,10 @@ function UserManagement() {
                     <img
                       src={selectedUserForActions.image_url}
                       alt={selectedUserForActions.full_name}
-                      className="w-16 h-16 rounded-full object-cover"
+                      className="object-cover w-16 h-16 rounded-full"
                     />
                   ) : (
-                    <div className="w-16 h-16 bg-blue-500 text-white rounded-full flex items-center justify-center text-xl font-bold">
+                    <div className="flex items-center justify-center w-16 h-16 text-xl font-bold text-white bg-blue-500 rounded-full">
                       {selectedUserForActions.full_name
                         .split(" ")
                         .map((n) => n[0])
@@ -938,7 +937,7 @@ function UserManagement() {
                 </p>
               </div>
 
-              <div className="mb-6 p-3 bg-gray-50 rounded-lg">
+              <div className="p-3 mb-6 rounded-lg bg-gray-50">
                 <p className="text-sm text-gray-600">
                   Current Status:{" "}
                   <span
@@ -950,7 +949,7 @@ function UserManagement() {
               </div>
 
               <div className="mb-6">
-                <label className="block text-sm font-medium text-gray-700 mb-3">
+                <label className="block mb-3 text-sm font-medium text-gray-700">
                   Select duration to disable the account or enable it:
                 </label>
                 <div className="space-y-2">
@@ -984,7 +983,7 @@ function UserManagement() {
                         onChange={(e) => setDeactivateDuration(e.target.value)}
                         className="w-4 h-4 text-blue-600"
                       />
-                      <span className="ml-3 flex items-center gap-2 text-sm font-medium text-gray-700">
+                      <span className="flex items-center gap-2 ml-3 text-sm font-medium text-gray-700">
                         {option.icon}
                         {option.label}
                       </span>

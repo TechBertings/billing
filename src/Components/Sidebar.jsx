@@ -38,7 +38,7 @@ export const getAllMenuItems = () => [
         submenu: [
             { icon: <FaUser />, label: 'Create Client Profile', path: 'ClientProfile' },
             { icon: <FaUser />, label: 'Client Profile List', path: 'ClientProfileList' },
-            { icon: <FaUsers />, label: 'Create Employees Profile', path: 'employees' },
+            { icon: <FaUsers />, label: 'Create Employees Profile', path: 'EmployeeProfile' },
             { icon: <FaUsers />, label: 'Employees Profile List', path: 'employees-list' },
             { icon: <FaClipboardList />, label: 'Processing', path: 'processing' },
         ]
@@ -329,7 +329,7 @@ const Sidebar = ({ isOpen, onNavigate, currentPage, currentUser }) => {
 
                                         {/* Simple tooltip for collapsed items WITHOUT submenu */}
                                         {!isOpen && !item.submenu && (
-                                            <div className="absolute z-50 invisible px-3 py-2 ml-4 text-sm font-medium text-white transition-all duration-200 rounded-lg shadow-xl opacity-0 pointer-events-none  left-full bg-slate-900 group-hover:opacity-100 group-hover:visible whitespace-nowrap">
+                                            <div className="absolute z-50 invisible px-3 py-2 ml-4 text-sm font-medium text-white transition-all duration-200 rounded-lg shadow-xl opacity-0 pointer-events-none left-full bg-slate-900 group-hover:opacity-100 group-hover:visible whitespace-nowrap">
                                                 {item.label}
                                                 <div className="absolute right-full top-1/2 -translate-y-1/2 border-[6px] border-transparent border-r-slate-900" />
                                             </div>

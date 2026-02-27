@@ -74,8 +74,8 @@ const formatTIN = (val) => {
   return f;
 };
 
-const inputCls = "w-full px-4 py-2.5 text-sm border-2 rounded-lg border-slate-200 focus:border-teal-500 focus:outline-none transition bg-white text-slate-800 placeholder-slate-400";
-const selectCls = "w-full px-4 py-2.5 text-sm border-2 rounded-lg border-slate-200 focus:border-teal-500 focus:outline-none transition bg-white text-slate-800 cursor-pointer";
+const inputCls = "w-full px-4 py-2.5 text-sm border-2 rounded-lg border-slate-200 focus:border-blue-500 focus:outline-none transition bg-white text-slate-800 placeholder-slate-400";
+const selectCls = "w-full px-4 py-2.5 text-sm border-2 rounded-lg border-slate-200 focus:border-blue-500 focus:outline-none transition bg-white text-slate-800 cursor-pointer";
 
 const Field = ({ label, children, span2 }) => (
   <div className={span2 ? 'md:col-span-2' : ''}>
@@ -90,9 +90,13 @@ const RadioGroup = ({ name, value, onChange, options }) => (
   <div className="flex flex-col gap-2 mt-1">
     {options.map(opt => (
       <label key={opt} className="flex items-center gap-3 cursor-pointer group">
-        <div onClick={() => onChange({ target: { name, value: opt } })}
+        <div
+          onClick={() => onChange({ target: { name, value: opt } })}
           className={`w-4 h-4 rounded-full border-2 flex items-center justify-center transition cursor-pointer
-            ${value === opt ? 'border-teal-500 bg-teal-500' : 'border-slate-300 group-hover:border-teal-400'}`}>
+            ${value === opt
+              ? 'border-blue-500 bg-blue-500'
+              : 'border-slate-300 group-hover:border-blue-400'}`}
+        >
           {value === opt && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
         </div>
         <span className="text-sm text-slate-700">{opt}</span>
@@ -101,29 +105,47 @@ const RadioGroup = ({ name, value, onChange, options }) => (
   </div>
 );
 
-const StepBar = ({ current }) => (
-  <div className="flex items-center gap-0 px-6 py-4 mb-8 overflow-x-auto bg-slate-900 rounded-xl">
-    {STEPS.map((step, idx) => {
-      const done = current > step.id;
-      const active = current === step.id;
-      return (
-        <React.Fragment key={step.id}>
-          <div className="flex items-center gap-2 whitespace-nowrap">
-            <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold transition-all
-              ${done ? 'bg-teal-500 text-white' : active ? 'bg-teal-400 text-slate-900' : 'bg-slate-700 text-slate-400'}`}>
-              {done ? <FaCheck size={10} /> : step.id}
-            </div>
-            <span className={`text-sm font-medium transition-all
-              ${done ? 'text-teal-400' : active ? 'text-white' : 'text-slate-500'}`}>
-              {step.label}
-            </span>
-          </div>
-          {idx < STEPS.length - 1 && (
-            <FaChevronRight className="flex-shrink-0 mx-3 text-slate-600" size={10} />
-          )}
-        </React.Fragment>
-      );
-    })}
+// ── Clickable StepBar — no scroll, responsive, fully clickable ──
+const StepBar = ({ current, onStepClick }) => (
+  <div className="px-4 py-3 mb-8 shadow-lg bg-gradient-to-r from-blue-500 to-indigo-600 rounded-xl shadow-blue-500/30">
+    <div className="flex items-center justify-between w-full">
+      {STEPS.map((step, idx) => {
+        const done = current > step.id;
+        const active = current === step.id;
+        return (
+          <React.Fragment key={step.id}>
+            {/* Clickable Step */}
+            <button
+              type="button"
+              onClick={() => onStepClick(step.id)}
+              className={`flex items-center gap-2 group transition-all duration-200 rounded-lg px-2 py-1.5 cursor-pointer
+                ${active ? 'opacity-100' : done ? 'opacity-90 hover:opacity-100' : 'opacity-60 hover:opacity-80'}`}
+              title={`Go to Step ${step.id}: ${step.label}`}
+            >
+              {/* Circle */}
+              <div className={`flex-shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold transition-all
+                ${done || active
+                  ? 'bg-white text-blue-600 shadow'
+                  : 'bg-white/20 text-white group-hover:bg-white/30'}`}>
+                {done ? <FaCheck size={10} /> : step.id}
+              </div>
+              {/* Label — hidden on very small, shown on md+ */}
+              <span className={`text-xs font-medium transition-all hidden sm:block whitespace-nowrap
+                ${active ? 'text-white font-bold' : done ? 'text-white' : 'text-blue-100 group-hover:text-white'}`}>
+                {step.label}
+              </span>
+            </button>
+
+            {/* Connector */}
+            {idx < STEPS.length - 1 && (
+              <div className={`flex-1 h-0.5 mx-1 rounded-full transition-all
+                ${current > step.id ? 'bg-white/70' : 'bg-white/20'}`}
+              />
+            )}
+          </React.Fragment>
+        );
+      })}
+    </div>
   </div>
 );
 
@@ -133,18 +155,13 @@ export default function ClientProfile() {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
   const [messageType, setMessageType] = useState('');
-
-  // ── Map state ──
   const [mapInput, setMapInput] = useState('');
   const [mapQuery, setMapQuery] = useState('Philippines');
 
   const [dropdowns, setDropdowns] = useState({
-    status: [],
-    business_registration: [],
-    line_of_business: [],
-    tax_type: [],
-    source_of_income: [],
-    tax_payer_classification: [],
+    status: [], business_registration: [], line_of_business: [],
+    tax_type: [], source_of_income: [], tax_payer_classification: [],
+    vat_type: [],
   });
   const [ddLoading, setDdLoading] = useState(true);
 
@@ -152,43 +169,34 @@ export default function ClientProfile() {
     const fetchDropdowns = async () => {
       setDdLoading(true);
       try {
-        const [stat, br, lob, tt, soi, tpc] = await Promise.all([
+        const [stat, br, lob, tt, soi, tpc, vt] = await Promise.all([
           supabase.from('status').select('id, status').order('id'),
           supabase.from('business_registration').select('id, business_registration').order('id'),
           supabase.from('line_of_business').select('id, line_of_business').order('id'),
           supabase.from('tax_type').select('id, tax_type').order('id'),
           supabase.from('source_of_income').select('id, source_of_income').order('id'),
           supabase.from('tax_payer_classification').select('id, tax_payer_classification').order('id'),
+          supabase.from('vat_type').select('id, vat_type').order('id'),
         ]);
         setDropdowns({
-          status: stat.data || [],
-          business_registration: br.data || [],
-          line_of_business: lob.data || [],
-          tax_type: tt.data || [],
-          source_of_income: soi.data || [],
-          tax_payer_classification: tpc.data || [],
+          status: stat.data || [], business_registration: br.data || [],
+          line_of_business: lob.data || [], tax_type: tt.data || [],
+          source_of_income: soi.data || [], tax_payer_classification: tpc.data || [],
+          vat_type: vt.data || [],
         });
-      } catch (err) {
-        console.error('Failed to load dropdowns', err);
-      } finally {
-        setDdLoading(false);
-      }
+      } catch (err) { console.error(err); }
+      finally { setDdLoading(false); }
     };
     fetchDropdowns();
   }, []);
 
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
-    if (type === 'checkbox') {
-      setFormData(p => ({ ...p, [name]: checked ? 'Yes' : 'No' }));
-    } else if (name === 'tin') {
-      setFormData(p => ({ ...p, tin: formatTIN(value) }));
-    } else {
-      setFormData(p => ({ ...p, [name]: value }));
-    }
+    if (type === 'checkbox') setFormData(p => ({ ...p, [name]: checked ? 'Yes' : 'No' }));
+    else if (name === 'tin') setFormData(p => ({ ...p, tin: formatTIN(value) }));
+    else setFormData(p => ({ ...p, [name]: value }));
   };
 
-  // ── Map search handler ──
   const handleMapSearch = () => {
     if (!mapInput.trim()) return;
     setMapQuery(mapInput.trim());
@@ -197,59 +205,42 @@ export default function ClientProfile() {
 
   const handleReset = () => {
     setFormData({ ...initialForm, client_id_number: genID() });
-    setMapInput('');
-    setMapQuery('Philippines');
-    setStep(1);
-    setMessage('');
+    setMapInput(''); setMapQuery('Philippines'); setStep(1); setMessage('');
   };
 
   const handleSubmit = async () => {
-    setLoading(true);
-    setMessage('');
+    setLoading(true); setMessage('');
     try {
       const { error } = await supabase.from('client_profile').insert([{
         client_id: formData.client_id_number,
         date_of_coverage: formData.date_of_coverage || null,
         month_of_coverage: formData.month_of_coverage || null,
-        status: formData.status,
-        business_registration: formData.business_registration,
-        line_of_business: formData.line_of_business,
-        business_name: formData.business_name,
-        trade_name: formData.trade_name,
-        tax_type: formData.tax_type,
+        status: formData.status, business_registration: formData.business_registration,
+        line_of_business: formData.line_of_business, business_name: formData.business_name,
+        trade_name: formData.trade_name, tax_type: formData.tax_type,
         source_of_income: formData.source_of_income,
         tax_payer_classification: formData.tax_payer_classification,
         business_registration_numbers: formData.business_registration_numbers,
-        tin: formData.tin,
-        sec_registration_no: formData.sec_registration_no,
+        tin: formData.tin, sec_registration_no: formData.sec_registration_no,
         date_of_incorporation: formData.date_of_incorporation || null,
         dti_registration: formData.dti_registration,
         date_of_expiration: formData.date_of_expiration || null,
-        sss_employer_no: formData.sss_employer_no,
-        phic_employer_no: formData.phic_employer_no,
+        sss_employer_no: formData.sss_employer_no, phic_employer_no: formData.phic_employer_no,
         hdmf_employer_no: formData.hdmf_employer_no,
         corporation_signatory_type: formData.corporation_signatory_type,
         sole_proprietor_signatory_type: formData.sole_proprietor_signatory_type,
         registered_business_address: formData.registered_business_address,
-        renting: formData.renting,
-        renting_vat_type: formData.renting_vat_type || null,
-        rdo: formData.rdo,
-        district: formData.district,
-        zip_code: formData.zip_code,
+        renting: formData.renting, renting_vat_type: formData.renting_vat_type || null,
+        rdo: formData.rdo, district: formData.district, zip_code: formData.zip_code,
         google_map_location: formData.google_map_location,
-        fathers_name: formData.fathers_name,
-        mothers_maiden_name: formData.mothers_maiden_name,
-        marital_status: formData.marital_status,
-        date_of_birth: formData.date_of_birth || null,
-        citizenship: formData.citizenship,
-        gender: formData.gender,
+        fathers_name: formData.fathers_name, mothers_maiden_name: formData.mothers_maiden_name,
+        marital_status: formData.marital_status, date_of_birth: formData.date_of_birth || null,
+        citizenship: formData.citizenship, gender: formData.gender,
         present_home_address: formData.present_home_address,
         permanent_home_address: formData.permanent_home_address,
         personal_email_address: formData.personal_email_address,
-        contact_information: formData.contact_information,
-        contact_person: formData.contact_person,
-        designation: formData.designation,
-        email_address: formData.email_address,
+        contact_information: formData.contact_information, contact_person: formData.contact_person,
+        designation: formData.designation, email_address: formData.email_address,
         contact_number: formData.contact_number,
         official_office_contact_number: formData.official_office_contact_number,
         created_at: new Date().toISOString(),
@@ -261,9 +252,7 @@ export default function ClientProfile() {
     } catch (err) {
       setMessage(`❌ Error: ${err.message}`);
       setMessageType('error');
-    } finally {
-      setLoading(false);
-    }
+    } finally { setLoading(false); }
   };
 
   const renderStep = () => {
@@ -272,7 +261,7 @@ export default function ClientProfile() {
         <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
           <Field label="Client ID Number" span2>
             <input type="text" value={formData.client_id_number} disabled
-              className="w-full px-4 py-2.5 text-sm font-mono font-semibold text-teal-600 bg-teal-50 border-2 border-teal-200 rounded-lg cursor-not-allowed" />
+              className="w-full px-4 py-2.5 text-sm font-mono font-semibold text-blue-600 bg-blue-50 border-2 border-blue-200 rounded-lg cursor-not-allowed" />
           </Field>
           <Field label="Date of Coverage">
             <input type="date" name="date_of_coverage" value={formData.date_of_coverage} onChange={handleChange} className={inputCls} />
@@ -367,21 +356,31 @@ export default function ClientProfile() {
           <Field label="Registered Business Address" span2>
             <input type="text" name="registered_business_address" value={formData.registered_business_address} onChange={handleChange} placeholder="Enter registered business address" className={inputCls} />
           </Field>
-          <Field label="Renting" span2>
-            <div className="flex items-center gap-6 mt-1">
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input type="checkbox" name="renting" checked={formData.renting === 'Yes'} onChange={handleChange} className="w-4 h-4 accent-teal-500" />
-                <span className="text-sm text-slate-700">Yes, currently renting</span>
-              </label>
-              {formData.renting === 'Yes' && (
-                <select name="renting_vat_type" value={formData.renting_vat_type} onChange={handleChange}
-                  className="flex-1 px-3 py-2 text-sm bg-white border-2 rounded-lg border-slate-200 focus:border-teal-500 focus:outline-none">
-                  <option value="">— VAT Type —</option>
-                  {['Net of VAT', 'VAT', 'Withholding'].map(o => <option key={o}>{o}</option>)}
-                </select>
-              )}
-            </div>
-          </Field>
+       <Field label="Renting" span2>
+  <div className="flex items-center gap-3 mt-1">
+    {['No', 'Yes'].map((opt) => (
+      <label key={opt}
+        onClick={() => setFormData(p => ({ ...p, renting: opt, renting_vat_type: opt === 'No' ? '' : p.renting_vat_type }))}
+        className={`flex items-center gap-3 px-2 py-2 rounded-xl border-2 cursor-pointer transition-all
+          ${formData.renting === opt
+            ? 'border-blue-500 bg-blue-50 text-blue-600'
+            : 'border-slate-200 hover:border-blue-300 text-slate-600 hover:text-slate-900'}`}>
+        <div className={`w-2 h-2 rounded-full border-2 flex items-center justify-center transition
+          ${formData.renting === opt ? 'border-blue-500 bg-blue-500' : 'border-slate-300'}`}>
+          {formData.renting === opt && <div className="w-1.0 h-1.0 rounded-full bg-white" />}
+        </div>
+        <span className="text-sm font-semibold">{opt}</span>
+      </label>
+    ))}
+    {formData.renting === 'Yes' && (
+      <select name="renting_vat_type" value={formData.renting_vat_type} onChange={handleChange}
+        className="flex-1 px-3 py-2 text-sm bg-white border-2 rounded-lg border-slate-200 focus:border-blue-500 focus:outline-none">
+        <option value="">— VAT Type —</option>
+        {dropdowns.vat_type.map(o => <option key={o.id} value={o.vat_type}>{o.vat_type}</option>)}
+      </select>
+    )}
+  </div>
+</Field>
           <Field label="RDO">
             <input type="text" name="rdo" value={formData.rdo} onChange={handleChange} placeholder="Enter RDO" className={inputCls} />
           </Field>
@@ -392,10 +391,8 @@ export default function ClientProfile() {
             <input type="text" name="zip_code" value={formData.zip_code} onChange={handleChange} placeholder="Enter zip code" className={inputCls} />
           </Field>
 
-          {/* ── Embedded Map ── */}
           <Field label="Office Location (Map)" span2>
             <div className="overflow-hidden border-2 border-slate-200 rounded-xl">
-              {/* Search Bar */}
               <div className="flex gap-2 p-3 border-b bg-slate-50 border-slate-200">
                 <input
                   type="text"
@@ -403,49 +400,32 @@ export default function ClientProfile() {
                   onChange={(e) => setMapInput(e.target.value)}
                   onKeyDown={(e) => { if (e.key === 'Enter') handleMapSearch(); }}
                   placeholder="Type address then press Enter or click Search..."
-                  className="flex-1 px-3 py-2 text-sm transition border-2 rounded-lg border-slate-200 focus:border-teal-500 focus:outline-none"
+                  className="flex-1 px-3 py-2 text-sm transition border-2 rounded-lg border-slate-200 focus:border-blue-500 focus:outline-none"
                 />
-                <button
-                  type="button"
-                  onClick={handleMapSearch}
-                  className="px-4 py-2 text-sm font-semibold text-white transition bg-teal-500 rounded-lg hover:bg-teal-600 whitespace-nowrap"
-                >
+                <button type="button" onClick={handleMapSearch}
+                  className="px-4 py-2 text-sm font-semibold text-white transition rounded-lg shadow-md whitespace-nowrap hover:opacity-90 bg-gradient-to-r from-blue-500 to-indigo-600 shadow-blue-500/30">
                   Search
                 </button>
                 {formData.google_map_location && (
                   <a
                     href={`https://maps.google.com/maps?q=${encodeURIComponent(formData.google_map_location)}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="px-4 py-2 text-sm font-semibold text-teal-600 transition border-2 border-teal-200 rounded-lg hover:bg-teal-50 whitespace-nowrap"
-                  >
+                    target="_blank" rel="noopener noreferrer"
+                    className="px-4 py-2 text-sm font-semibold text-blue-600 transition border-2 border-blue-200 rounded-lg hover:bg-blue-50 whitespace-nowrap">
                     Open ↗
                   </a>
                 )}
               </div>
-
-              {/* Map iframe */}
               <iframe
                 key={mapQuery}
                 src={`https://maps.google.com/maps?q=${encodeURIComponent(mapQuery)}&output=embed&z=16`}
-                width="100%"
-                height="350"
-                style={{ border: 0 }}
-                allowFullScreen
-                loading="lazy"
-                referrerPolicy="no-referrer-when-downgrade"
+                width="100%" height="350" style={{ border: 0 }}
+                allowFullScreen loading="lazy" referrerPolicy="no-referrer-when-downgrade"
                 title="Office Location Map"
               />
-
-              {/* Footer */}
               <div className="flex items-center justify-between px-4 py-2 border-t bg-slate-50 border-slate-200">
-                <p className="text-xs text-slate-400">
-                  💡 Type an address above then press <strong>Enter</strong> or click <strong>Search</strong>
-                </p>
+                <p className="text-xs text-slate-400">💡 Type an address above then press <strong>Enter</strong> or click <strong>Search</strong></p>
                 {formData.google_map_location && (
-                  <span className="text-xs font-semibold text-teal-600">
-                    📍 {formData.google_map_location}
-                  </span>
+                  <span className="text-xs font-semibold text-blue-600">📍 {formData.google_map_location}</span>
                 )}
               </div>
             </div>
@@ -455,17 +435,17 @@ export default function ClientProfile() {
 
       case 5: return (
         <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
-          {/* Entity Type Selector */}
           <Field label="Entity Type" span2>
             <div className="flex gap-4 mt-1">
               {['Corporation', 'Sole Proprietor'].map((type) => (
-                <label key={type} onClick={() => setFormData(p => ({ ...p, entity_type: type }))}
+                <label key={type}
+                  onClick={() => setFormData(p => ({ ...p, entity_type: type }))}
                   className={`flex items-center gap-3 px-5 py-3 rounded-xl border-2 cursor-pointer transition-all
                     ${formData.entity_type === type
-                      ? 'border-teal-500 bg-teal-50 text-teal-700'
-                      : 'border-slate-200 hover:border-slate-300 text-slate-600'}`}>
+                      ? 'border-blue-500 bg-blue-50 text-blue-600'
+                      : 'border-slate-200 hover:border-blue-300 text-slate-600 hover:text-slate-900'}`}>
                   <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center transition
-                    ${formData.entity_type === type ? 'border-teal-500 bg-teal-500' : 'border-slate-300'}`}>
+                    ${formData.entity_type === type ? 'border-blue-500 bg-blue-500' : 'border-slate-300'}`}>
                     {formData.entity_type === type && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
                   </div>
                   <span className="text-sm font-semibold">{type}</span>
@@ -474,69 +454,49 @@ export default function ClientProfile() {
             </div>
           </Field>
 
-          {/* ── CORPORATION ── */}
           {formData.entity_type === 'Corporation' && (
             <Field label="Signatory Type" span2>
-              <RadioGroup
-                name="corporation_signatory_type"
-                value={formData.corporation_signatory_type}
-                onChange={handleChange}
-                options={['Annual Meeting President', 'Corporate Secretary (Signatory)']}
-              />
+              <RadioGroup name="corporation_signatory_type" value={formData.corporation_signatory_type}
+                onChange={handleChange} options={['Annual Meeting President', 'Corporate Secretary (Signatory)']} />
             </Field>
           )}
 
-          {/* ── SOLE PROPRIETOR ── */}
           {formData.entity_type === 'Sole Proprietor' && (
             <>
               <Field label="Signatory Type" span2>
-                <RadioGroup
-                  name="sole_proprietor_signatory_type"
-                  value={formData.sole_proprietor_signatory_type}
-                  onChange={handleChange}
-                  options={['Owner', 'Authorized Representative']}
-                />
+                <RadioGroup name="sole_proprietor_signatory_type" value={formData.sole_proprietor_signatory_type}
+                  onChange={handleChange} options={['Owner', 'Authorized Representative']} />
               </Field>
               <Field label="Father's Name">
-                <input type="text" name="fathers_name" value={formData.fathers_name}
-                  onChange={handleChange} placeholder="Enter father's name" className={inputCls} />
+                <input type="text" name="fathers_name" value={formData.fathers_name} onChange={handleChange} placeholder="Enter father's name" className={inputCls} />
               </Field>
               <Field label="Mother's Maiden Name">
-                <input type="text" name="mothers_maiden_name" value={formData.mothers_maiden_name}
-                  onChange={handleChange} placeholder="Enter mother's maiden name" className={inputCls} />
+                <input type="text" name="mothers_maiden_name" value={formData.mothers_maiden_name} onChange={handleChange} placeholder="Enter mother's maiden name" className={inputCls} />
               </Field>
               <Field label="Marital Status">
-                <input type="text" name="marital_status" value={formData.marital_status}
-                  onChange={handleChange} placeholder="Single / Married / Widowed" className={inputCls} />
+                <input type="text" name="marital_status" value={formData.marital_status} onChange={handleChange} placeholder="Single / Married / Widowed" className={inputCls} />
               </Field>
               <Field label="Date of Birth">
-                <input type="date" name="date_of_birth" value={formData.date_of_birth}
-                  onChange={handleChange} className={inputCls} />
+                <input type="date" name="date_of_birth" value={formData.date_of_birth} onChange={handleChange} className={inputCls} />
               </Field>
               <Field label="Citizenship">
-                <input type="text" name="citizenship" value={formData.citizenship}
-                  onChange={handleChange} placeholder="Enter citizenship" className={inputCls} />
+                <input type="text" name="citizenship" value={formData.citizenship} onChange={handleChange} placeholder="Enter citizenship" className={inputCls} />
               </Field>
               <Field label="Gender">
-                <input type="text" name="gender" value={formData.gender}
-                  onChange={handleChange} placeholder="Enter gender" className={inputCls} />
+                <input type="text" name="gender" value={formData.gender} onChange={handleChange} placeholder="Enter gender" className={inputCls} />
               </Field>
               <Field label="Present Home Address" span2>
-                <input type="text" name="present_home_address" value={formData.present_home_address}
-                  onChange={handleChange} placeholder="Enter present home address" className={inputCls} />
+                <input type="text" name="present_home_address" value={formData.present_home_address} onChange={handleChange} placeholder="Enter present home address" className={inputCls} />
               </Field>
               <Field label="Permanent Home Address" span2>
-                <input type="text" name="permanent_home_address" value={formData.permanent_home_address}
-                  onChange={handleChange} placeholder="Enter permanent home address" className={inputCls} />
+                <input type="text" name="permanent_home_address" value={formData.permanent_home_address} onChange={handleChange} placeholder="Enter permanent home address" className={inputCls} />
               </Field>
               <Field label="Personal Email Address" span2>
-                <input type="email" name="personal_email_address" value={formData.personal_email_address}
-                  onChange={handleChange} placeholder="personal@email.com" className={inputCls} />
+                <input type="email" name="personal_email_address" value={formData.personal_email_address} onChange={handleChange} placeholder="personal@email.com" className={inputCls} />
               </Field>
             </>
           )}
 
-          {/* Walang napili pa */}
           {!formData.entity_type && (
             <div className="py-10 text-sm text-center md:col-span-2 text-slate-400">
               ⚠️ Please select an entity type above to continue.
@@ -578,24 +538,34 @@ export default function ClientProfile() {
   return (
     <div className="min-h-screen p-6 bg-gradient-to-br from-slate-50 to-slate-100">
       <div className="max-w-5xl mx-auto">
+        {/* Page header */}
         <div className="mb-6">
           <h1 className="text-3xl font-bold text-slate-900">Client Profile</h1>
           <p className="mt-1 text-sm text-slate-500">Complete all steps to submit client information for approval</p>
         </div>
 
-        <StepBar current={step} />
+        {/* ── Fixed StepBar: no scroll, all steps visible, all clickable ── */}
+        <StepBar current={step} onStepClick={setStep} />
 
         <div className="overflow-hidden bg-white shadow-lg rounded-xl">
           {/* Step Title Bar */}
-          <div className="flex items-center justify-between px-8 py-4 bg-slate-900">
+          <div className="flex items-center justify-between px-8 py-4 bg-gradient-to-r from-blue-500 to-indigo-600">
             <div>
-              <span className="text-xs font-semibold tracking-widest text-teal-400 uppercase">Step {step} of {STEPS.length}</span>
+              <span className="text-xs font-bold tracking-wider text-white uppercase">
+                Step {step} of {STEPS.length}
+              </span>
               <h2 className="text-white font-semibold text-lg mt-0.5">{STEPS[step - 1].label}</h2>
             </div>
             <div className="flex gap-1">
               {STEPS.map(s => (
-                <div key={s.id} className={`h-1.5 w-8 rounded-full transition-all
-                  ${s.id < step ? 'bg-teal-500' : s.id === step ? 'bg-teal-400' : 'bg-slate-700'}`} />
+                <div key={s.id}
+                  className={`h-1.5 w-8 rounded-full transition-all
+                    ${s.id < step
+                      ? 'bg-white'
+                      : s.id === step
+                        ? 'bg-blue-300'
+                        : 'bg-white/20'}`}
+                />
               ))}
             </div>
           </div>
@@ -620,7 +590,7 @@ export default function ClientProfile() {
               <div className="flex gap-3 ml-auto">
                 {!isFirstStep && (
                   <button type="button" onClick={() => setStep(s => s - 1)}
-                    className="flex items-center gap-2 px-6 py-2.5 text-sm font-semibold rounded-lg border-2 border-slate-200 hover:border-slate-300 text-slate-700 transition">
+                    className="flex items-center gap-2 px-6 py-2.5 text-sm font-semibold rounded-lg border-2 border-slate-200 hover:border-blue-300 hover:text-blue-600 text-slate-700 transition">
                     <FaChevronLeft size={11} /> Back
                   </button>
                 )}
@@ -631,7 +601,7 @@ export default function ClientProfile() {
                   </button>
                 ) : (
                   <button type="button" onClick={handleSubmit} disabled={loading}
-                    className="flex items-center gap-2 px-8 py-2.5 text-sm font-semibold rounded-lg bg-gradient-to-r from-teal-500 to-teal-600 hover:from-teal-600 hover:to-teal-700 text-white transition disabled:opacity-50 disabled:cursor-not-allowed">
+                    className="flex items-center gap-2 px-8 py-2.5 text-sm font-semibold rounded-lg bg-gradient-to-r from-blue-500 to-indigo-600 text-white transition hover:opacity-90 shadow-lg shadow-blue-500/30 disabled:opacity-50 disabled:cursor-not-allowed">
                     <FaPaperPlane size={12} /> {loading ? 'Submitting...' : 'Submit for Approval'}
                   </button>
                 )}

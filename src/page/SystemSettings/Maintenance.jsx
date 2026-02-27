@@ -9,6 +9,8 @@ import BusinessRegistration from "../../Maintenance/BusinessRegistration";
 import LineOfBusiness from "../../Maintenance/LineOfBusiness";
 import SourceOfIncome from "../../Maintenance/SourceOfIncome";
 import TaxPayerClassification from "../../Maintenance/TaxPayerClassification";
+import VatType from "../../Maintenance/VatType";
+import SalaryBracket from "../../Maintenance/SalaryBracket";
 
 const Maintenance = () => {
   const [selectedModule, setSelectedModule] = useState(null);
@@ -64,6 +66,18 @@ const Maintenance = () => {
       description: "Manage Your User's Tax Payer Classification",
       icon: HelpCircle,
     },
+    {
+      id: "VatType",
+      name: "VAT Type",
+      description: "Manage Your User's VAT Type",
+      icon: HelpCircle,
+    },
+    {
+      id: "SalaryBracket",
+      name: "Salary Bracket",
+      description: "Manage Your User's Salary Bracket",
+      icon: HelpCircle,
+    },
   ];
 
   const filteredModules =
@@ -112,6 +126,12 @@ const Maintenance = () => {
         
       case "TaxPayerClassification":
         return <TaxPayerClassification />;
+        
+      case "VatType":
+        return <VatType />;
+   
+      case "SalaryBracket":
+        return <SalaryBracket />;
         
       default:
         return null;
