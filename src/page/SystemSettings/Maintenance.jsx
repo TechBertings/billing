@@ -11,6 +11,7 @@ import SourceOfIncome from "../../Maintenance/SourceOfIncome";
 import TaxPayerClassification from "../../Maintenance/TaxPayerClassification";
 import VatType from "../../Maintenance/VatType";
 import SalaryBracket from "../../Maintenance/SalaryBracket";
+import Account from "../../Maintenance/Account";
 
 const Maintenance = () => {
   const [selectedModule, setSelectedModule] = useState(null);
@@ -78,6 +79,12 @@ const Maintenance = () => {
       description: "Manage Your User's Salary Bracket",
       icon: HelpCircle,
     },
+    {
+      id: "Account",
+      name: "Account",
+      description: "Manage Your User's Account",
+      icon: HelpCircle,
+    },
   ];
 
   const filteredModules =
@@ -132,6 +139,8 @@ const Maintenance = () => {
    
       case "SalaryBracket":
         return <SalaryBracket />;
+      case "Account":
+        return <Account />;
         
       default:
         return null;

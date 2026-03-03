@@ -40,7 +40,7 @@ export const getAllMenuItems = () => [
             { icon: <FaUser />, label: 'Client Profile List', path: 'ClientProfileList' },
             { icon: <FaUsers />, label: 'Create Employees Profile', path: 'EmployeeProfile' },
             { icon: <FaUsers />, label: 'Employees Profile List', path: 'employees-list' },
-            { icon: <FaClipboardList />, label: 'Processing', path: 'processing' },
+            { icon: <FaClipboardList />, label: 'Billing Information', path: 'BillingInformation' },
         ]
     },
     {
@@ -51,8 +51,8 @@ export const getAllMenuItems = () => [
         submenu: [
             { icon: <FaChartBar />, label: 'Account Summary', path: 'account-summary' },
             { icon: <FaHistory />, label: 'Bank Reconciliation', path: 'bank-reconciliation' },
-            { icon: <FaFileInvoiceDollar />, label: 'Create Billing', path: 'create-billing' },
-            { icon: <FaCreditCard />, label: 'Record Payment', path: 'record-payment' },
+            { icon: <FaFileInvoiceDollar />, label: 'Create Billing', path: 'CreateBilling' },
+            { icon: <FaCreditCard />, label: 'Record Payment', path: 'RecordPayment' },
             { icon: <FaMoneyBillWave />, label: 'Remittances', path: 'remittances' },
         ]
     },
