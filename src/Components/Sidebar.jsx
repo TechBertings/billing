@@ -41,6 +41,7 @@ export const getAllMenuItems = () => [
             { icon: <FaUsers />, label: 'Create Employees Profile', path: 'EmployeeProfile' },
             { icon: <FaUsers />, label: 'Employees Profile List', path: 'employees-list' },
             { icon: <FaClipboardList />, label: 'Billing Information', path: 'BillingInformation' },
+            { icon: <FaClipboardList />, label: 'Job Orders', path: 'JobOrder' , badge: true},
         ]
     },
     {
@@ -50,7 +51,7 @@ export const getAllMenuItems = () => [
         category: 'Portals',
         submenu: [
             { icon: <FaChartBar />, label: 'Account Summary', path: 'account-summary' },
-            { icon: <FaHistory />, label: 'Bank Reconciliation', path: 'bank-reconciliation' },
+            { icon: <FaHistory />, label: 'Bank Reconciliation', path: 'BankReconciliation' },
             { icon: <FaFileInvoiceDollar />, label: 'Create Billing', path: 'CreateBilling' },
             { icon: <FaCreditCard />, label: 'Record Payment', path: 'RecordPayment' },
             { icon: <FaMoneyBillWave />, label: 'Remittances', path: 'remittances' },

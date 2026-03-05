@@ -4,7 +4,7 @@ import { rolePermissionAPI } from '../lib/supabaseClient';
 import Swal from 'sweetalert2';
 
 // Import menu items from Sidebar
-import { getAllMenuItems } from '../Components/Sidebar';
+import { getAllMenuItems } from '../components/sidebar';
 
 // ============================================================================
 // UTILITY FUNCTIONS (kept for backwards compatibility)

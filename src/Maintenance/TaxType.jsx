@@ -5,7 +5,7 @@ import CustomerMaintenanceTable, {
   MaintenanceModal,
   DeleteModal,
   Toast,
-} from "../Components/customer_maintenance";
+} from "../components/customer_maintenance";
 
 // ─── Auto-generate next tt_code ──────────────────────────────────────
 const generateNextCode = (existingList) => {

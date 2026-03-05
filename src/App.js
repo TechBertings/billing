@@ -1,22 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { FaChartLine, FaFileInvoiceDollar, FaUsers, FaMoneyBillWave, FaClock, FaLock } from 'react-icons/fa';
+import {FaLock } from 'react-icons/fa';
 import Login from './page/LogIn';
-import Header from './Components/Header';
-import Sidebar from './Components/Sidebar';
-import CreateInvoice from './Invoices/CreateInvoice';
-import CreateCustomer from './Customer/Createcustomer';
-import CustomerList from './Customer/Customerlist';
-import CustomerGroups from './Customer/CustomerGroups';
-import AllInvoices from './Invoices/AllInvoices';
-import Status from './Invoices/InvoicesByStatus';
-import PaidInvoices from './Invoices/Paidinvoices ';
-import OverdueInvoices from './Invoices/Overdueinvoices';
-import DraftInvoices from './Invoices/Draftinvoices';
-import AllReceipts from './Receipts/Allreceipts';
-import GenerateReceipt from './Receipts/Generatereceipt';
-import OfficialReceipts from './Receipts/Officialreceipts';
-import CustomerReport from './Reports/CustomerReports';
-import AuditTrail from './Reports/AuditTrail';
+import Header from './components/header';
+import Sidebar from './components/sidebar';
 import Maintenance from './page/SystemSettings/Maintenance';
 import UserManagement from './page/SystemSettings/UserManagement';
 import { canAccessPage, loadPermissionsForRole, clearPermissionsCache } from './Maintenance/RolePermission';
@@ -28,6 +14,9 @@ import BillingInformation from './page/ClientManagement/BillingInformation';
 import CreateBilling from './page/AccountingManagement/CreateBilling';
 import RecordPayment from './page/AccountingManagement/RecordPayment';
 import FinanceDashboard from './page/FinanceDashboard';
+import JobOrder from './page/ClientManagement/JobOrder';
+import BankReconciliation from './page/AccountingManagement/bank_reconciliation';
+
 
 function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(() => {
@@ -121,62 +110,19 @@ function App() {
       case 'dashboard':
         return <FinanceDashboard currentUser={currentUser} onNavigate={handleNavigation} />;
 
-      case 'create-invoice':    return <CreateInvoice />;
-      case 'customers-add':     return <CreateCustomer />;
-      case 'customers-all':     return <CustomerList />;
-      case 'CustomerGroups':    return <CustomerGroups />;
-      case 'AllInvoices':       return <AllInvoices />;
-      case 'AllReceipts':       return <AllReceipts />;
-      case 'GenerateReceipt':   return <GenerateReceipt />;
-      case 'OfficialReceipts':  return <OfficialReceipts />;
+
       case 'Maintenance':       return <Maintenance />;
       case 'UserManagement':    return <UserManagement />;
       case 'ClientProfile':     return <ClientProfile />;
       case 'ClientProfileList': return <ClientProfileList />;
       case 'ClientApproval':    return <ClientApproval />;
       case 'EmployeeProfile':   return <EmployeeProfile />;
-      case 'CustomerReport':    return <CustomerReport />;
-      case 'AuditTrail':        return <AuditTrail />;
       case 'RecordPayment':     return <RecordPayment />;
       case 'BillingInformation':return <BillingInformation />;
       case 'CreateBilling':     return <CreateBilling />;
+      case 'JobOrder':          return <JobOrder />;
+      case 'BankReconciliation':          return <BankReconciliation />;
 
-      case 'Status':
-        return <Status statusFilter="pending" title="Pending Invoices" icon={FaClock} color="from-orange-500 to-amber-600" />;
-
-      case 'invoices-paid':     return <PaidInvoices />;
-      case 'invoices-overdue':  return <OverdueInvoices />;
-      case 'invoices-draft':    return <DraftInvoices />;
-
-      case 'invoices-all':
-        return (
-          <div className="px-6">
-            <h2 className="mb-4 text-2xl font-bold text-gray-800">All Invoices</h2>
-            <div className="p-8 text-center bg-white border border-gray-100 rounded-lg shadow-sm">
-              <p className="text-gray-600">All Invoices page - Coming soon!</p>
-            </div>
-          </div>
-        );
-
-      case 'reports-sales':
-        return (
-          <div className="px-6">
-            <h2 className="mb-4 text-2xl font-bold text-gray-800">Sales Report</h2>
-            <div className="p-8 text-center bg-white border border-gray-100 rounded-lg shadow-sm">
-              <p className="text-gray-600">Sales Report page - Coming soon!</p>
-            </div>
-          </div>
-        );
-
-      case 'settings-general':
-        return (
-          <div className="px-6">
-            <h2 className="mb-4 text-2xl font-bold text-gray-800">General Settings</h2>
-            <div className="p-8 text-center bg-white border border-gray-100 rounded-lg shadow-sm">
-              <p className="text-gray-600">General Settings page - Coming soon!</p>
-            </div>
-          </div>
-        );
 
       default:
         return (

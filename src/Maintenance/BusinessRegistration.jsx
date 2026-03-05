@@ -4,7 +4,7 @@ import CustomerMaintenanceTable, {
   MaintenanceModal,
   DeleteModal,
   Toast,
-} from "../Components/customer_maintenance";
+} from "../components/customer_maintenance";
 
 const generateNextCode = (existingList) => {
   const prefix = "BR_";
