@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {FaLock } from 'react-icons/fa';
 import Login from './page/LogIn';
-import Header from './components/header';
+import Header from './components/Header';
 import Sidebar from './components/sidebar';
 import Maintenance from './page/SystemSettings/Maintenance';
 import UserManagement from './page/SystemSettings/UserManagement';
