@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import {FaLock } from 'react-icons/fa';
+import { FaLock } from 'react-icons/fa';
 import Login from './page/LogIn';
 import Header from './components/Header';
 import Sidebar from './components/sidebar';
@@ -16,24 +16,32 @@ import RecordPayment from './page/AccountingManagement/RecordPayment';
 import FinanceDashboard from './page/FinanceDashboard';
 import JobOrder from './page/ClientManagement/JobOrder';
 import BankReconciliation from './page/AccountingManagement/bank_reconciliation';
+import ChartOfAccounts from './page/AccountingManagement/chart_of_accounts';
+import SOAApproval from './page/Approval/statement_of_account_approval';
 
+// ── Roles allowed to approve & send SOAs ──
+export const APPROVER_ROLES = ['Admin', 'Manager', 'Supervisor'];
 
 function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(() => {
     const saved = localStorage.getItem('isLoggedIn');
     return saved === 'true';
   });
-  
+
   const [currentUser, setCurrentUser] = useState(() => {
-    const saved = localStorage.getItem('currentUser');
-    return saved ? JSON.parse(saved) : null;
+    try {
+      const saved = localStorage.getItem('currentUser');
+      return saved ? JSON.parse(saved) : null;
+    } catch {
+      return null;
+    }
   });
-  
+
   const [sidebarOpen, setSidebarOpen] = useState(() => {
     const saved = localStorage.getItem('sidebarOpen');
     return saved !== null ? saved === 'true' : true;
   });
-  
+
   const [currentPage, setCurrentPage] = useState(() => {
     const saved = localStorage.getItem('currentPage');
     return saved || 'dashboard';
@@ -110,19 +118,23 @@ function App() {
       case 'dashboard':
         return <FinanceDashboard currentUser={currentUser} onNavigate={handleNavigation} />;
 
+      case 'Maintenance':        return <Maintenance />;
+      case 'UserManagement':     return <UserManagement />;
+      case 'ClientProfile':      return <ClientProfile />;
+      case 'ClientProfileList':  return <ClientProfileList />;
+      case 'ClientApproval':     return <ClientApproval currentUser={currentUser} />;
+      case 'SOAApproval':        return <SOAApproval currentUser={currentUser} />;
+      case 'EmployeeProfile':    return <EmployeeProfile />;
+      case 'RecordPayment':      return <RecordPayment />;
+      case 'BillingInformation': return <BillingInformation />;
 
-      case 'Maintenance':       return <Maintenance />;
-      case 'UserManagement':    return <UserManagement />;
-      case 'ClientProfile':     return <ClientProfile />;
-      case 'ClientProfileList': return <ClientProfileList />;
-      case 'ClientApproval':    return <ClientApproval />;
-      case 'EmployeeProfile':   return <EmployeeProfile />;
-      case 'RecordPayment':     return <RecordPayment />;
-      case 'BillingInformation':return <BillingInformation />;
-      case 'CreateBilling':     return <CreateBilling />;
-      case 'JobOrder':          return <JobOrder />;
-      case 'BankReconciliation':          return <BankReconciliation />;
+      // ── Pass currentUser so CreateBilling knows the role ──
+      case 'CreateBilling':
+        return <CreateBilling currentUser={currentUser} onNavigate={handleNavigation} />;
 
+      case 'JobOrder':           return <JobOrder />;
+      case 'BankReconciliation': return <BankReconciliation />;
+      case 'ChartOfAccounts':    return <ChartOfAccounts />;
 
       default:
         return (

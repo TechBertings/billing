@@ -22,7 +22,7 @@ export default function Step6ContactInfo({ formData, handleChange }) {
           name="contact_person"
           value={formData.contact_person}
           onChange={handleChange}
-          placeholder="Enter contact person name"
+          placeholder="Full name"
           className={inputCls}
         />
       </Field>
@@ -33,7 +33,7 @@ export default function Step6ContactInfo({ formData, handleChange }) {
           name="designation"
           value={formData.designation}
           onChange={handleChange}
-          placeholder="Enter designation"
+          placeholder="e.g. Owner, Manager"
           className={inputCls}
         />
       </Field>
@@ -44,29 +44,29 @@ export default function Step6ContactInfo({ formData, handleChange }) {
           name="email_address"
           value={formData.email_address}
           onChange={handleChange}
-          placeholder="office@email.com"
+          placeholder="email@example.com"
           className={inputCls}
         />
       </Field>
 
       <Field label="Contact Number">
         <input
-          type="tel"
+          type="text"
           name="contact_number"
           value={formData.contact_number}
           onChange={handleChange}
-          placeholder="Enter contact number"
+          placeholder="09XX-XXX-XXXX"
           className={inputCls}
         />
       </Field>
 
       <Field label="Official Office Contact Number">
         <input
-          type="tel"
+          type="text"
           name="official_office_contact_number"
           value={formData.official_office_contact_number}
           onChange={handleChange}
-          placeholder="Enter office contact number"
+          placeholder="Office landline or number"
           className={inputCls}
         />
       </Field>

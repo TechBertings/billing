@@ -17,6 +17,7 @@ const Field = ({ label, children, span2 }) => (
 export default function Step1CoverageStatus({ formData, handleChange, dropdowns, ddLoading }) {
   return (
     <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+
       <Field label="Client ID Number" span2>
         <input
           type="text"
@@ -63,14 +64,13 @@ export default function Step1CoverageStatus({ formData, handleChange, dropdowns,
         </select>
       </Field>
 
-      {/* ✅ CHANGE 1: Status defaults to "Existing" — set in ClientProfile.jsx via useEffect */}
       <Field label="Status">
         <select
           name="status"
           value={formData.status}
           onChange={handleChange}
           className={selectCls}
-          disabled={true}
+          disabled={ddLoading}
         >
           <option value="">— Select Status —</option>
           {dropdowns.status.map((o) => (
@@ -80,6 +80,7 @@ export default function Step1CoverageStatus({ formData, handleChange, dropdowns,
           ))}
         </select>
       </Field>
+
     </div>
   );
 }

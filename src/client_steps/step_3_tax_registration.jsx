@@ -14,6 +14,7 @@ const Field = ({ label, children, span2 }) => (
 
 export default function Step3TaxRegistration({ formData, handleChange }) {
   const isSoleProp = formData.business_registration === "Sole Proprietor";
+
   return (
     <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
 
@@ -40,7 +41,7 @@ export default function Step3TaxRegistration({ formData, handleChange }) {
         />
       </Field>
 
- {/* ✅ Sole Prop = DTI only | Others = SEC + Date of Incorporation */}
+      {/* Sole Proprietor → DTI + Expiration | Corporation/OPC → SEC + Date of Incorporation */}
       {isSoleProp ? (
         <>
           <Field label="DTI Registration">

@@ -1,6 +1,8 @@
     import React, { useState, useEffect } from 'react';
     import { FaCheck, FaTimes, FaEye, FaClock, FaSearch } from 'react-icons/fa';
     import { supabase } from '../../lib/supabaseClient';
+    import { useApprovalPermission } from '../../hooks/approval_permission';
+
 
     const BADGE = {
     pending:  'bg-amber-50 text-amber-700 border border-amber-200',
@@ -21,7 +23,7 @@
     const fmtDate = (d) =>
     d ? new Date(d).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' }) : '—';
 
-    export default function ClientApproval() {
+    export default function ClientApproval({ currentUser }) {  
     const [clients, setClients]           = useState([]);
     const [filtered, setFiltered]         = useState([]);
     const [loading, setLoading]           = useState(true);
@@ -86,7 +88,7 @@
             .from('client_profile')
             .update({
             approval_status: action,
-            approved_by: 'Admin',
+            approved_by: currentUser?.full_name || currentUser?.fullName || 'Admin',
             approved_date: new Date().toISOString().split('T')[0],
             })
             .eq('id', clientId);

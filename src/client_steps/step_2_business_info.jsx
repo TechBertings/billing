@@ -54,7 +54,7 @@ export default function Step2BusinessInfo({ formData, handleChange, dropdowns, d
         </select>
       </Field>
 
-      {/* ✅ CHANGE 2: Sole Proprietor = First/Middle/Last; others = Business Name */}
+      {/* Sole Proprietor → First / Middle / Last Name | Others → Business Name */}
       {isSoleProp ? (
         <>
           <Field label="First Name">

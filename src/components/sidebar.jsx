@@ -38,10 +38,10 @@ export const getAllMenuItems = () => [
         submenu: [
             { icon: <FaUser />, label: 'Create Client Profile', path: 'ClientProfile' },
             { icon: <FaUser />, label: 'Client Profile List', path: 'ClientProfileList' },
-            { icon: <FaUsers />, label: 'Create Employees Profile', path: 'EmployeeProfile' },
-            { icon: <FaUsers />, label: 'Employees Profile List', path: 'employees-list' },
-            { icon: <FaClipboardList />, label: 'Billing Information', path: 'BillingInformation' },
-            { icon: <FaClipboardList />, label: 'Job Orders', path: 'JobOrder' , badge: true},
+           // { icon: <FaUsers />, label: 'Create Employees Profile', path: 'EmployeeProfile' },
+           // { icon: <FaUsers />, label: 'Employees Profile List', path: 'employees-list' },
+           // { icon: <FaClipboardList />, label: 'Billing Information', path: 'BillingInformation' },
+           // { icon: <FaClipboardList />, label: 'Job Orders', path: 'JobOrder' , badge: true},
         ]
     },
     {
@@ -50,26 +50,28 @@ export const getAllMenuItems = () => [
         path: 'accounting-management',
         category: 'Portals',
         submenu: [
-            { icon: <FaChartBar />, label: 'Account Summary', path: 'account-summary' },
-            { icon: <FaHistory />, label: 'Bank Reconciliation', path: 'BankReconciliation' },
+          //  { icon: <FaChartBar />, label: 'Account Summary', path: 'account-summary' },
+          //  { icon: <FaHistory />, label: 'Bank Reconciliation', path: 'BankReconciliation' },
             { icon: <FaFileInvoiceDollar />, label: 'Create Billing', path: 'CreateBilling' },
-            { icon: <FaCreditCard />, label: 'Record Payment', path: 'RecordPayment' },
-            { icon: <FaMoneyBillWave />, label: 'Remittances', path: 'remittances' },
+          //  { icon: <FaCreditCard />, label: 'Record Payment', path: 'RecordPayment' },
+          //  { icon: <FaMoneyBillWave />, label: 'Remittances', path: 'remittances' },
+            { icon: <FaFileAlt />, label: 'Chart of Accounts', path: 'ChartOfAccounts' },
+            
         ]
     },
-    {
+  /*  {
         icon: <FaTools />,
         label: 'Tools',
         path: 'tools',
         category: 'Tools',
         description: 'All business tools in one place',
         submenu: [
-            { icon: <FaFileAlt />, label: 'Transmittal Form', path: 'tools-transmittal' },
-            { icon: <FaFolder />, label: 'File Smart', path: 'tools-file-smart' },
-            { icon: <FaCheck />, label: 'Data Verifier', path: 'tools-data-verifier' },
-            { icon: <FaCalculator />, label: 'Calculator', path: 'tools-calculator' },
+         //   { icon: <FaFileAlt />, label: 'Transmittal Form', path: 'tools-transmittal' },
+         //   { icon: <FaFolder />, label: 'File Smart', path: 'tools-file-smart' },
+         //   { icon: <FaCheck />, label: 'Data Verifier', path: 'tools-data-verifier' },
+          //  { icon: <FaCalculator />, label: 'Calculator', path: 'tools-calculator' },
         ]
-    },
+    }, */
     {
         icon: <FaClipboardCheck />,
         label: 'For Approval',
@@ -77,20 +79,21 @@ export const getAllMenuItems = () => [
         category: 'For Approval',
         submenu: [
             { icon: <FaUser />, label: 'Client Profile', path: 'ClientApproval', badge: true },
-            { icon: <FaUsers />, label: 'Employee Profile', path: 'approval-employee-profile', badge: true },
-            { icon: <FaClipboardList />, label: 'Payroll Processing', path: 'approval-payroll', badge: true },
-            { icon: <FaFileInvoiceDollar />, label: 'Billing', path: 'approval-billing', badge: true },
-            { icon: <FaCreditCard />, label: 'Record Payment', path: 'approval-payment', badge: true },
-            { icon: <FaMoneyBillWave />, label: 'Remittances', path: 'approval-remittances', badge: true },
-            { icon: <FaHistory />, label: 'Bank Reconciliation', path: 'approval-bank-recon', badge: true },
-            { icon: <FaFileAlt />, label: 'Transmittal Form', path: 'approval-transmittal', badge: true },
+            { icon: <FaClipboardCheck />, label: 'Statement of Account', path: 'SOAApproval', badge: true },
+        //    { icon: <FaUsers />, label: 'Employee Profile', path: 'approval-employee-profile', badge: true },
+         //   { icon: <FaClipboardList />, label: 'Payroll Processing', path: 'approval-payroll', badge: true },
+           // { icon: <FaFileInvoiceDollar />, label: 'Billing', path: 'approval-billing', badge: true },
+           // { icon: <FaCreditCard />, label: 'Record Payment', path: 'approval-payment', badge: true },
+          //  { icon: <FaMoneyBillWave />, label: 'Remittances', path: 'approval-remittances', badge: true },
+           // { icon: <FaHistory />, label: 'Bank Reconciliation', path: 'approval-bank-recon', badge: true },
+           // { icon: <FaFileAlt />, label: 'Transmittal Form', path: 'approval-transmittal', badge: true },
         ]
     },
-    {
+   /*{
         icon: <FaHistory />,
         label: 'Transaction History',
         path: 'transaction-history'
-    },
+    },*/
     {
         icon: <FaCog />,
         label: 'System Settings',
