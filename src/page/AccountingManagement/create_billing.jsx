@@ -42,12 +42,14 @@ const generateSOANumber = async () => {
   return `${prefix}${next}`;
 };
 
-// ── Build email HTML string (used by handleApproveAndEmail) ──────────────────
+
+// ── Build email HTML string — SYNCED with Print Preview JSX ─────────────────
+// Called by handleApproveAndEmail. Must match the print-area div 1:1.
 function buildSOAEmailHTML({
   clientFirstName, billTo, tradeName = '', address = '',
   soaNumber, soaDate, dueDate,
   items, subtotal, downPayment, withholdingTax, totalDue,
-  notes, approvedBy,
+  notes, approvedBy, logoBase64 = '',
 }) {
   const fmtN = (n) =>
     Number(n || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -56,85 +58,124 @@ function buildSOAEmailHTML({
     ? new Date(d).toLocaleDateString('en-PH', { year: 'numeric', month: 'long', day: 'numeric' })
     : '—';
 
-  const green = '#1a5c2e';
+  const green      = '#1a5c2e';
   const lightGreen = '#e8f5ec';
   const headerGreen = '#2d7a4f';
 
+  // ── Watermark: rowspan td with centered img — only way that works in Gmail ──
+  // Gmail strips background-image, so we use a hidden overlay column via rowspan=15
+  // The extra column is 0-width and overflow:visible so it doesn't affect layout
+  const watermarkCell = logoBase64
+    ? `<td rowspan="15" style="width:0;padding:0;border:none;overflow:visible;vertical-align:middle;">
+        <div style="width:0;overflow:visible;position:relative;">
+          <img src="${logoBase64}"
+            style="position:absolute;top:-180px;left:-175px;width:350px;height:350px;
+                   object-fit:contain;opacity:0.08;pointer-events:none;display:block;" />
+        </div>
+      </td>`
+    : '';
+
+  // ── Items: pad to 15 rows (same as preview's Array.from({ length: 15 })) ──
   const tableRows = [...items];
   while (tableRows.length < 15) tableRows.push(null);
 
   const itemRows = tableRows.map((item, i) => `
-    <tr style="background:${i % 2 === 0 ? '#fff' : '#f9fdf9'};border-bottom:1px solid #e0ede5;">
+    <tr style="background:${i % 2 === 0 ? '#fff' : '#f4faf6'};border-bottom:1px solid #e0ede5;height:24px;">
       <td style="padding:7px 12px;color:#555;font-family:monospace;text-align:center;border-right:1px solid #e0ede5;">${item?.account_code || ''}</td>
       <td style="padding:7px 12px;color:#444;border-right:1px solid #e0ede5;">${item?.agency || ''}</td>
       <td style="padding:7px 12px;color:#222;font-weight:${item ? 500 : 400};border-right:1px solid #e0ede5;">${item?.description || ''}</td>
       <td style="padding:7px 12px;color:#555;border-right:1px solid #e0ede5;">${item?.period_covered || ''}</td>
-      <td style="padding:7px 12px;text-align:right;font-family:monospace;font-weight:${item ? 600 : 400};">${item ? fmtN(item.amount) : ''}</td>
+      <td style="padding:7px 12px;text-align:right;font-family:monospace;font-weight:${item ? 600 : 400};">${item ? '₱' + fmtN(item.amount) : ''}</td>
+      ${i === 0 ? watermarkCell : ''}
+    </tr>`).join('');
+
+  // ── SOA info rows — SYNCED: tradeName as separate row (italic, gray), same as preview ──
+  const soaInfoRows = [
+    ['Statement of Account No. :', soaNumber],
+    ['Bill To :', billTo],
+    ...(tradeName ? [['', tradeName]] : []),
+    ['Address :', address || '—'],
+    ['Statement of Account Date :', fmtDate(soaDate)],
+    ['Due Date :', fmtDate(dueDate)],
+  ].map(([k, v]) => `
+    <tr style="border-bottom:1px solid ${green};">
+      <td style="padding:5px 10px;color:${green};font-weight:600;background:${lightGreen};white-space:nowrap;border-right:1px solid ${green};">${k}</td>
+      <td style="padding:5px 10px;min-width:160px;color:${k === '' ? '#888' : '#222'};font-style:${k === '' ? 'italic' : 'normal'};">${v}</td>
     </tr>`).join('');
 
   return `<!DOCTYPE html>
 <html lang="en">
-<head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Statement of Account – ${soaNumber}</title></head>
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Statement of Account – ${soaNumber}</title>
+</head>
 <body style="margin:0;padding:0;background:#f0f0f0;font-family:Arial,'Helvetica Neue',sans-serif;">
 <div style="max-width:780px;margin:24px auto;background:#fff;border-radius:8px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.1);">
 
-  <!-- HEADER -->
+  <!-- ── HEADER (synced with preview header div) ── -->
   <table width="100%" cellpadding="0" cellspacing="0" style="border-bottom:3px solid ${green};">
     <tr><td style="padding:20px 24px 16px;">
       <table cellpadding="0" cellspacing="0" width="100%"><tr>
+
+        <!-- LEFT: Logo + Company Info -->
         <td valign="top" style="width:55%;">
           <table cellpadding="0" cellspacing="0"><tr>
             <td valign="top" style="padding-right:12px;">
-              <!-- 🔁 Replace with: <img src="cid:fortiserv-logo" width="60" height="60" style="border-radius:8px;display:block;" /> -->
-           <img src="https://pxzaexutvuatdexgkavk.supabase.co/storage/v1/object/public/assets/fortiserv_logo.png" 
-  width="60" height="60" 
-  style="border-radius:8px;display:block;object-fit:contain;" />
+              <img src="https://pxzaexutvuatdexgkavk.supabase.co/storage/v1/object/public/assets/fortiserv_logo.png"
+                width="60" height="60" style="border-radius:8px;display:block;object-fit:contain;" />
             </td>
             <td valign="top">
               <div style="color:${green};font-weight:900;font-size:20px;letter-spacing:1px;line-height:1;">FORTISERV</div>
-              <div style="color:${green};font-weight:700;font-size:9px;margin-bottom:4px;">BUSINESS MANAGEMENT ENTERPRISE, Co.</div>
+              <div style="color:#cc0000;font-weight:700;font-size:9px;margin-bottom:2px;">BUSINESS MANAGEMENT ENTERPRISE, Co.</div>
               <div style="color:#666;font-style:italic;font-size:8.5px;margin-bottom:8px;">"LET'S MAKE THINGS WORK BETTER..."</div>
-              <div style="border-top:1px solid ${green};padding-top:6px;font-size:8.5px;color:#444;line-height:1.7;">
-📍 Unit 32-A 3rd Floor M. Arce St. Heroes Del 96 Barangay 74<br/>             
-   &nbsp;&nbsp;&nbsp;&nbsp;1400 City of Caloocan NCR Third District Philippines<br/>
-                📞 (02) 8995-0486 &nbsp; 📱 0917-315-9779<br/>
-                ✉ collectionfbmec@gmail.com &nbsp; 🌐 fortiservbmec@gmail.com<br/>
-                📋 <strong>Tax Registration</strong> – Non-VAT Registered – TIN: 008-778-733-00000
+              <div style="border-top:1px solid ${green};padding-top:6px;">
+                <!-- 2-col grid synced with preview -->
+                <table cellpadding="0" cellspacing="2" style="font-size:8.5px;color:#444;border-collapse:collapse;">
+                  <tr>
+                    <td style="padding-right:16px;"><span style="color:${green};margin-right:4px;">●</span> Unit 32-A 3rd Floor M. Arce St. Heroes Del 96 Barangay 74</td>
+                    <td><span style="color:${green};margin-right:4px;">✆</span> (02) 8995-0486</td>
+                  </tr>
+                  <tr>
+                    <td style="padding-right:16px;color:#888;padding-left:12px;">1400 City of Caloocan NCR Third District Philippines</td>
+                    <td><span style="color:${green};margin-right:4px;">✆</span> 0917-315-9779</td>
+                  </tr>
+                  <tr>
+                    <td style="padding-right:16px;"><span style="color:${green};margin-right:4px;">✉</span> collectionfbmec@gmail.com</td>
+                    <td><span style="color:${green};margin-right:4px;">⊕</span> fortiservbmec@gmail.com</td>
+                  </tr>
+                  <tr>
+                    <td style="padding-right:16px;"><span style="color:${green};margin-right:4px;">▣</span> <strong>Tax Registration</strong></td>
+                    <td><span style="color:${green};margin-right:4px;">◉</span> FSBMEC Finance</td>
+                  </tr>
+                  <tr>
+                    <td style="padding-left:12px;">Non-VAT Registered</td>
+                    <td></td>
+                  </tr>
+                  <tr>
+                    <td style="padding-left:12px;">TIN: 008-778-733-00000</td>
+                    <td></td>
+                  </tr>
+                </table>
               </div>
             </td>
           </tr></table>
         </td>
+
+        <!-- RIGHT: SOA Info Table -->
         <td valign="top" align="right" style="width:45%;">
           <div style="color:${green};font-weight:900;font-size:18px;letter-spacing:2px;margin-bottom:10px;">STATEMENT OF ACCOUNT</div>
-          <table cellpadding="0" cellspacing="0" style="border-collapse:collapse;border:1px solid ${green};margin-left:auto;font-size:9.5px;">
-            <tr style="border-bottom:1px solid ${green};">
-              <td style="padding:5px 10px;color:${green};font-weight:600;background:${lightGreen};white-space:nowrap;border-right:1px solid ${green};">Statement of Account No. :</td>
-              <td style="padding:5px 10px;min-width:150px;">${soaNumber}</td>
-            </tr>
-            <tr style="border-bottom:1px solid ${green};">
-              <td style="padding:5px 10px;color:${green};font-weight:600;background:${lightGreen};border-right:1px solid ${green};">Bill To :</td>
-              <td style="padding:5px 10px;"><strong>${billTo}</strong>${tradeName ? `<br/><span style="color:#666;font-style:italic;font-size:8.5px;">${tradeName}</span>` : ''}</td>
-            </tr>
-            <tr style="border-bottom:1px solid ${green};">
-              <td style="padding:5px 10px;color:${green};font-weight:600;background:${lightGreen};border-right:1px solid ${green};">Address :</td>
-              <td style="padding:5px 10px;">${address || '—'}</td>
-            </tr>
-            <tr style="border-bottom:1px solid ${green};">
-              <td style="padding:5px 10px;color:${green};font-weight:600;background:${lightGreen};border-right:1px solid ${green};">Statement of Account Date :</td>
-              <td style="padding:5px 10px;">${fmtDate(soaDate)}</td>
-            </tr>
-            <tr>
-              <td style="padding:5px 10px;color:${green};font-weight:600;background:${lightGreen};border-right:1px solid ${green};">Due Date :</td>
-              <td style="padding:5px 10px;">${fmtDate(dueDate)}</td>
-            </tr>
+          <table cellpadding="0" cellspacing="0"
+            style="border-collapse:collapse;border:1px solid ${green};margin-left:auto;font-size:9.5px;min-width:270px;">
+            ${soaInfoRows}
           </table>
         </td>
+
       </tr></table>
     </td></tr>
   </table>
 
-  <!-- ITEMS TABLE -->
+  <!-- ── ITEMS TABLE (watermark via tbody background-image — email-safe) ── -->
   <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;">
     <thead>
       <tr style="background:${headerGreen};">
@@ -145,28 +186,37 @@ function buildSOAEmailHTML({
         <th style="padding:8px 12px;color:#fff;font-weight:700;font-size:9.5px;text-align:right;">Amount</th>
       </tr>
     </thead>
-    <tbody>${itemRows}</tbody>
+    <tbody>
+      ${itemRows}
+    </tbody>
   </table>
 
-  <!-- FOOTER -->
+  <!-- ── FOOTER: 3-col (synced with preview grid grid-cols-3) ── -->
   <table width="100%" cellpadding="0" cellspacing="0" style="border-top:2px solid ${green};">
     <tr>
+
+      <!-- Payment Details -->
       <td width="33%" valign="top" style="padding:14px 16px;border-right:1px solid #dceee3;font-size:8.5px;">
-        <div style="color:${green};font-weight:700;font-size:9px;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;padding-bottom:4px;border-bottom:1px solid ${green};">Payment Details</div>
+        <div style="color:${green};font-weight:700;font-size:9px;text-transform:uppercase;letter-spacing:1px;
+                    margin-bottom:8px;padding-bottom:4px;border-bottom:1px solid ${green};">Payment Details</div>
         <table cellpadding="0" cellspacing="0" style="margin-bottom:8px;"><tr>
           <td style="padding-right:8px;vertical-align:top;">
-            <div style="width:26px;height:26px;background:${lightGreen};border-radius:50%;border:1px solid ${green};text-align:center;line-height:26px;font-size:12px;">💵</div>
+            <div style="width:26px;height:26px;background:${lightGreen};border-radius:50%;border:1px solid ${green};
+                        text-align:center;line-height:26px;font-size:12px;">💵</div>
           </td>
           <td>
             <div style="font-weight:700;color:#222;font-size:8.5px;">PICK UP (cash / cheque)</div>
             <div style="color:#666;font-style:italic;font-size:8px;">(Kindly advise when to schedule your payment)</div>
-            <div style="color:#222;font-size:8px;">Our schedule for collection is every<br/><strong>Monday, Wednesday, and Friday.</strong></div>
+            <div style="color:#222;font-size:8px;">Our schedule for collection is every<br/>
+              <strong>Monday, Wednesday, and Friday.</strong>
+            </div>
           </td>
         </tr></table>
         <hr style="border:none;border-top:1px dashed #cde3d4;margin:6px 0;"/>
         <table cellpadding="0" cellspacing="0" style="margin-bottom:6px;"><tr>
           <td style="padding-right:8px;vertical-align:top;">
-            <div style="width:26px;height:26px;background:${lightGreen};border-radius:50%;border:1px solid ${green};text-align:center;line-height:26px;font-size:12px;">🏦</div>
+            <div style="width:26px;height:26px;background:${lightGreen};border-radius:50%;border:1px solid ${green};
+                        text-align:center;line-height:26px;font-size:12px;">🏦</div>
           </td>
           <td>
             <div style="font-weight:700;color:#222;font-size:8.5px;">BANK TRANSFER/DEPOSIT</div>
@@ -174,33 +224,73 @@ function buildSOAEmailHTML({
             <div style="font-weight:700;color:#222;font-size:8px;">FORTISERV BUSINESS MANAGEMENT ENTERPRISE CO.</div>
           </td>
         </tr></table>
-        <!-- 🔁 Replace colored div with: <img src="cid:chinabank-logo" height="20" /> -->
-        <table cellpadding="0" cellspacing="0" style="background:#fef2f2;border-radius:4px;padding:4px 6px;margin-bottom:4px;width:100%;"><tr>
-          <td style="padding-right:8px;"><div style="background:#CC0000;border-radius:3px;padding:2px 6px;color:#fff;font-weight:700;font-size:7.5px;white-space:nowrap;">CHINABANK</div></td>
-          <td><div style="font-size:7.5px;color:#333;">Bank: China Bank Corporation</div><div style="font-size:7.5px;color:#555;">Account Number: 1307000000077</div></td>
-        </tr></table>
-        <!-- 🔁 Replace colored div with: <img src="cid:bdo-logo" height="20" /> -->
-        <table cellpadding="0" cellspacing="0" style="background:#eff4fb;border-radius:4px;padding:4px 6px;width:100%;"><tr>
-          <td style="padding-right:8px;"><div style="background:#003087;border-radius:3px;padding:2px 8px;color:#fff;font-weight:900;font-size:9px;white-space:nowrap;">BDO</div></td>
-          <td><div style="font-size:7.5px;color:#333;">Bank: Banco De Oro</div><div style="font-size:7.5px;color:#555;">Account Number: 004500601972</div></td>
-        </tr></table>
-      </td>
-      <td width="33%" valign="top" style="padding:14px 16px;border-right:1px solid #dceee3;font-size:8.5px;">
-        <div style="color:${green};font-weight:700;font-size:9px;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;padding-bottom:4px;border-bottom:1px solid ${green};">📋 Notes</div>
-        <div style="color:#444;line-height:1.7;white-space:pre-line;">${notes}</div>
-      </td>
-      <td width="34%" valign="top" style="padding:14px 16px;font-size:9.5px;">
-        <table width="100%" cellpadding="0" cellspacing="0">
-          <tr style="border-bottom:1px solid #e0ede5;"><td style="padding:6px 0;color:#444;">SUBTOTAL</td><td style="padding:6px 0;text-align:right;font-family:monospace;font-weight:600;">₱${fmtN(subtotal)}</td></tr>
-          <tr style="border-bottom:1px solid #e0ede5;"><td style="padding:6px 0;color:#444;">Less: Down Payment</td><td style="padding:6px 0;text-align:right;font-family:monospace;">₱${fmtN(downPayment)}</td></tr>
-          <tr style="border-bottom:2px solid ${green};"><td style="padding:6px 0;color:#444;">Less: 10% Withholding Tax</td><td style="padding:6px 0;text-align:right;font-family:monospace;">₱${fmtN(withholdingTax)}</td></tr>
-          <tr style="background:${green};"><td style="padding:8px 6px;color:#fff;font-weight:700;font-size:9px;text-transform:uppercase;">TOTAL AMOUNT DUE</td><td style="padding:8px 6px;text-align:right;font-family:monospace;font-weight:900;font-size:13px;color:#fff;">₱${fmtN(totalDue)}</td></tr>
+        <!-- Chinabank -->
+        <table cellpadding="0" cellspacing="0"
+          style="background:#fef2f2;border-radius:4px;padding:4px 6px;margin-bottom:4px;width:100%;max-height:32px;overflow:hidden;">
+          <tr>
+            <td style="padding-right:8px;">
+              <img src="https://pxzaexutvuatdexgkavk.supabase.co/storage/v1/object/public/assets/chinabank.png"
+                height="16" style="display:block;object-fit:contain;max-width:40px;" />
+            </td>
+            <td>
+              <div style="font-size:7.5px;color:#333;">Bank: China Bank Corporation</div>
+              <div style="font-size:7.5px;color:#555;">Account Number: 1307000000077</div>
+            </td>
+          </tr>
+        </table>
+        <!-- BDO -->
+        <table cellpadding="0" cellspacing="0"
+          style="background:#eff4fb;border-radius:4px;padding:4px 6px;width:100%;max-height:32px;overflow:hidden;">
+          <tr>
+            <td style="padding-right:8px;">
+              <img src="https://pxzaexutvuatdexgkavk.supabase.co/storage/v1/object/public/assets/bdo_logo.jpg"
+                height="16" style="display:block;object-fit:contain;max-width:40px;" />
+            </td>
+            <td>
+              <div style="font-size:7.5px;color:#333;">Bank: Banco De Oro</div>
+              <div style="font-size:7.5px;color:#555;">Account Number: 004500601972</div>
+            </td>
+          </tr>
         </table>
       </td>
+
+      <!-- Notes -->
+      <td width="33%" valign="top" style="padding:14px 16px;border-right:1px solid #dceee3;font-size:8.5px;">
+        <div style="color:${green};font-weight:700;font-size:9px;text-transform:uppercase;letter-spacing:1px;
+                    margin-bottom:8px;padding-bottom:4px;border-bottom:1px solid ${green};">📋 Notes</div>
+        <div style="color:#444;line-height:1.7;white-space:pre-line;">${notes}</div>
+      </td>
+
+      <!-- Totals (synced with preview totals table) -->
+      <td width="34%" valign="top" style="padding:14px 16px;font-size:9.5px;">
+        <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;">
+          <tr style="border-bottom:1px solid #e0ede5;">
+            <td style="padding:6px 0;color:#444;">SUBTOTAL</td>
+            <td style="padding:6px 0;text-align:right;font-family:monospace;font-weight:600;">₱${fmtN(subtotal)}</td>
+          </tr>
+          <tr style="border-bottom:1px solid #e0ede5;">
+            <td style="padding:6px 0;color:#444;">Less: Down Payment</td>
+            <td style="padding:6px 0;text-align:right;font-family:monospace;">₱${fmtN(downPayment)}</td>
+          </tr>
+          <tr style="border-bottom:2px solid ${green};">
+            <td style="padding:6px 0;color:#444;">Less: 10% Withholding Tax</td>
+            <td style="padding:6px 0;text-align:right;font-family:monospace;">₱${fmtN(withholdingTax)}</td>
+          </tr>
+          <tr style="background:${green};">
+            <td style="padding:8px 6px;color:#fff;font-weight:700;font-size:9px;text-transform:uppercase;letter-spacing:0.5px;">
+              TOTAL AMOUNT DUE
+            </td>
+            <td style="padding:8px 6px;text-align:right;font-family:monospace;font-weight:900;font-size:13px;color:#fff;">
+              ₱${fmtN(totalDue)}
+            </td>
+          </tr>
+        </table>
+      </td>
+
     </tr>
   </table>
 
-  <!-- SIGNATURES -->
+  <!-- ── SIGNATURES (synced with preview grid grid-cols-2) ── -->
   <table width="100%" cellpadding="0" cellspacing="0" style="border-top:1px solid #dceee3;">
     <tr>
       <td style="padding:16px 24px;font-size:9.5px;color:#555;width:50%;">
@@ -211,9 +301,13 @@ function buildSOAEmailHTML({
       </td>
       <td style="padding:16px 24px;font-size:9.5px;color:#555;width:50%;">
         Received By:<br/>
-        <div style="border-bottom:1px solid #999;height:32px;margin:6px 0;"></div>
-        Designation: <span style="display:inline-block;width:130px;border-bottom:1px solid #999;vertical-align:bottom;">&nbsp;</span><br/><br/>
-        Date Received: <span style="display:inline-block;width:100px;border-bottom:1px solid #999;vertical-align:bottom;">&nbsp;</span>
+        <div style="border-bottom:1px solid #999;height:32px;margin:8px 0;"></div>
+        <div style="margin-bottom:4px;">
+          Designation:&nbsp;<span style="display:inline-block;width:130px;border-bottom:1px solid #999;vertical-align:bottom;">&nbsp;</span>
+        </div>
+        <div>
+          Date Received:&nbsp;<span style="display:inline-block;width:100px;border-bottom:1px solid #999;vertical-align:bottom;">&nbsp;</span>
+        </div>
       </td>
     </tr>
   </table>
@@ -274,7 +368,13 @@ export default function CreateBilling({ currentUser }) {
   // ── Form ──
   const [soaNumber, setSoaNumber]           = useState('Generating...');
   const [soaDate, setSoaDate]               = useState(new Date().toISOString().split('T')[0]);
-  const [dueDate, setDueDate]               = useState('');
+const addDays = (dateStr, days) => {
+  const d = new Date(dateStr);
+  d.setDate(d.getDate() + days);
+  return d.toISOString().split('T')[0];
+};
+
+const [dueDate, setDueDate] = useState(() => addDays(new Date().toISOString().split('T')[0], 15));
   const [billTo, setBillTo]                 = useState('');
   const [address, setAddress]               = useState('');
   const [notes, setNotes]                   = useState(
@@ -368,6 +468,19 @@ const logoBase64 = LOGO_B64;
     setClientSearch('');
   };
 
+
+  const [agencies, setAgencies] = useState([]);
+
+const fetchAgencies = useCallback(async () => {
+  const { data } = await supabase
+    .from('government_agencies')
+    .select('id, name')
+    .eq('is_active', true)
+    .order('name');
+  setAgencies(data || []);
+}, []);
+
+useEffect(() => { fetchAgencies(); }, [fetchAgencies]);
   // ── COA ──
   const fetchCOA = useCallback(async () => {
     if (coaAccounts.length > 0) return;
@@ -382,49 +495,55 @@ const logoBase64 = LOGO_B64;
     setCoaLoading(false);
   }, [coaAccounts.length]);
 
-  const openCoaForRow = (rowId, e) => {
-    fetchCOA();
-    if (activeCoaRow === rowId) { setActiveCoaRow(null); return; }
-    const rect = e.currentTarget.getBoundingClientRect();
-    setCoaDropPos({ top: rect.bottom + window.scrollY + 4, left: rect.left + window.scrollX, width: 320 });
-    setActiveCoaRow(rowId);
-    setCoaSearch('');
-  };
+const openCoaForRow = (rowId, e) => {
+  fetchCOA();
+  if (activeCoaRow === rowId) { setActiveCoaRow(null); return; }
+  const rect = e.currentTarget.getBoundingClientRect();
+  setCoaDropPos({ top: rect.bottom + window.scrollY + 4, left: rect.left + window.scrollX, width: 320 });
+  setActiveCoaRow(rowId);
+  setCoaSearch('');
+};
 
-  const pickCoaForRow = (rowId, acct) => {
-    setItems(p => p.map(i => i.id === rowId ? {
-      ...i,
-      account_code: acct.code || '',
-      agency:       acct.agency || '',
-      description:  acct.account_name || '',
-      amount:       acct.default_amount || '',
-    } : i));
-    setActiveCoaRow(null);
-    setCoaSearch('');
-  };
+ const pickCoaForRow = (rowId, acct) => {
+  setItems(p => p.map(i => i.id === rowId ? {
+    ...i,
+    account_code: acct.code || '',
+    description:  acct.account_name || '',
+    amount:       acct.default_amount || '',
+  } : i));
+  setActiveCoaRow(null);
+  setCoaSearch('');
+};
 
   // ── Items ──
-  const updateItem = (id, field, val) => setItems(p => p.map(i => i.id === id ? { ...i, [field]: val } : i));
-  const removeItem = (id) => setItems(p => { const n = p.filter(i => i.id !== id); return n.length === 0 ? [newRow()] : n; });
+const updateItem = (id, field, val) =>
+  setItems(p => p.map(i => {
+    if (i.id !== id) return i;
+    if (field === 'agency' && val !== i.agency) {
+      return { ...i, agency: val, account_code: '', description: '', amount: '' };
+    }
+    return { ...i, [field]: val };
+  }));  const removeItem = (id) => setItems(p => { const n = p.filter(i => i.id !== id); return n.length === 0 ? [newRow()] : n; });
   const addRows    = (count) => { setItems(p => [...p, ...Array.from({ length: count }, newRow)]); setShowAddDrop(false); };
 
   // ── Totals ──
   const subtotal = items.reduce((s, i) => s + (parseFloat(i.amount) || 0), 0);
   const dp       = parseFloat(downPayment) || 0;
-  const wht      = parseFloat(withholdingTax) || 0;
+  const whtPercent = parseFloat(withholdingTax) || 0;
+  const wht = subtotal * (whtPercent / 100);
   const totalDue = subtotal - dp - wht;
 
-  // ── COA filter ──
-  const filteredCOA = coaAccounts.filter(a =>
+
+// ── COA filter ──
+const activeItem = items.find(i => i.id === activeCoaRow);
+
+const filteredCOA = coaAccounts.filter(a =>
+  (!activeItem?.agency || a.agency === activeItem.agency) &&
+  (
     a.account_name.toLowerCase().includes(coaSearch.toLowerCase()) ||
     (a.agency || '').toLowerCase().includes(coaSearch.toLowerCase())
-  );
-  const groupedCOA = filteredCOA.reduce((acc, a) => {
-    if (!acc[a.agency]) acc[a.agency] = [];
-    acc[a.agency].push(a);
-    return acc;
-  }, {});
-
+  )
+);
   // ── Validation ──
   const validate = () => {
     if (!selectedClient) { setMessage('Please select a client first.'); setMessageType('error'); return false; }
@@ -551,14 +670,7 @@ const logoBase64 = LOGO_B64;
     try {
       await upsertBilling('draft', filledItems);
       setSoaStatus('draft');
-      setSavedBillingId(null);
-      setSelectedClient(null);
-      setBillTo(''); setAddress(''); setClientSearch('');
-      setSoaDate(new Date().toISOString().split('T')[0]);
-      setDueDate('');
-      setDownPayment(''); setWithholdingTax('');
-      setItems([newRow()]);
-      generateSOANumber().then(setSoaNumber);
+      resetForm();
       setMessage('SOA saved! Form reset for new entry.');
       setMessageType('success');
     } catch (err) {
@@ -605,6 +717,7 @@ const logoBase64 = LOGO_B64;
         totalDue,
         notes,
         approvedBy: userFullName,
+         logoBase64,  
       });
 
       const res = await fetch(
@@ -637,9 +750,10 @@ const logoBase64 = LOGO_B64;
       const result = await res.json();
       if (!res.ok) throw new Error(result.error || 'Failed to send email');
 
-      setMessage(`✅ SOA approved and email sent to ${clientEmail}!`);
-      setMessageType('success');
-      setSavedBilling(buildSnapshot(filledItems));
+setMessage(`✅ SOA approved and email sent to ${clientEmail}!`);
+setMessageType('success');
+setSavedBilling(buildSnapshot(filledItems));
+resetForm();
     } catch (err) {
       setMessage(`Error: ${err.message}`); setMessageType('error');
     }
@@ -675,7 +789,24 @@ const logoBase64 = LOGO_B64;
     setApproving(false);
     setTimeout(() => setMessage(''), 4000);
   };
-
+  
+const resetForm = () => {
+  setSelectedClient(null);
+  setBillTo('');
+  setAddress('');
+  setClientSearch('');
+  const newSoaDate = new Date().toISOString().split('T')[0];
+  setSoaDate(newSoaDate);
+  setDueDate(addDays(newSoaDate, 15));
+  setDueDateTouched(false);
+  setDownPayment('');
+  setWithholdingTax('');
+  setItems([newRow()]);
+  setSoaStatus('draft');
+  setSavedBillingId(null);
+  setNotes('Payment is due within 15 days from invoice date.\n\nPlease send proof of payment for proper acknowledgment.\n\nThank you for your continuous trust and support to our accounting services.');
+  generateSOANumber().then(setSoaNumber);
+};
   // ─────────────────────────────────────────────────────────────
   return (
     <div className="min-h-screen bg-gray-50">
@@ -812,9 +943,17 @@ const logoBase64 = LOGO_B64;
                   <input type="date" value={soaDate} onChange={e => setSoaDate(e.target.value)} className={inputCls} />
                 </div>
                 <div>
-                  <label className={labelCls}>Due Date</label>
-                  <input type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} className={inputCls} />
-                </div>
+  <label className={labelCls}>Due Date</label>
+  <input
+    type="date"
+    value={dueDate}
+    onChange={e => {
+      setDueDate(e.target.value);
+      setDueDateTouched(true);
+    }}
+    className={inputCls}
+  />
+</div>
               </div>
             </div>
           </div>
@@ -918,7 +1057,7 @@ const logoBase64 = LOGO_B64;
               <thead>
                 <tr className="border-b border-gray-100">
                   <th className="px-4 py-2.5 text-left text-[11px] font-semibold text-gray-400 w-20">Code</th>
-                  <th className="px-4 py-2.5 text-left text-[11px] font-semibold text-gray-400 w-36">Agency</th>
+                  <th className="px-4 py-2.5 text-left text-[11px] font-semibold text-gray-400 w-56">Agency</th>
                   <th className="px-4 py-2.5 text-left text-[11px] font-semibold text-gray-400">Description of Services</th>
                   <th className="px-4 py-2.5 text-left text-[11px] font-semibold text-gray-400 w-32">Period</th>
                   <th className="px-4 py-2.5 text-right text-[11px] font-semibold text-gray-400 w-36">Amount</th>
@@ -934,21 +1073,30 @@ const logoBase64 = LOGO_B64;
                         placeholder="001"
                         className="w-full px-2 py-1.5 text-xs border border-transparent rounded focus:border-blue-300 focus:outline-none focus:bg-white bg-transparent transition" />
                     </td>
-                    <td className="px-3 py-2">
-                      <div onClick={(e) => openCoaForRow(item.id, e)}
-                        className="w-full px-2 py-1.5 text-xs border border-transparent rounded hover:border-blue-200 hover:bg-white cursor-pointer flex items-center justify-between transition">
-                        <span className={item.agency ? 'text-gray-700' : 'text-gray-300'}>
-                          {item.agency || 'Select agency...'}
-                        </span>
-                        <FaChevronDown size={8} className="ml-1 text-gray-300 shrink-0" />
-                      </div>
-                    </td>
-                    <td className="px-3 py-2">
-                      <input type="text" value={item.description}
-                        onChange={e => updateItem(item.id, 'description', e.target.value)}
-                        placeholder="Add description..."
-                        className="w-full px-2 py-1.5 text-xs border border-transparent rounded focus:border-blue-300 focus:outline-none focus:bg-white bg-transparent transition" />
-                    </td>
+            <td className="px-3 py-2">
+  <select
+    value={item.agency}
+    onChange={e => updateItem(item.id, 'agency', e.target.value)}
+    className="w-full px-2 py-1.5 text-xs border border-transparent rounded focus:border-blue-300 focus:outline-none focus:bg-white bg-transparent transition cursor-pointer"
+  >
+    <option value="">Select agency...</option>
+    {agencies.map(a => (
+      <option key={a.id} value={a.name}>{a.name}</option>
+    ))}
+  </select>
+</td>
+                  <td className="px-3 py-2">
+    <div
+      onClick={(e) => item.agency && openCoaForRow(item.id, e)}
+      className={`w-full px-2 py-1.5 text-xs border border-transparent rounded flex items-center justify-between transition
+        ${item.agency ? 'hover:border-blue-200 hover:bg-white cursor-pointer' : 'cursor-not-allowed'}`}
+    >
+      <span className={item.description ? 'text-gray-700' : 'text-gray-300'}>
+        {item.description || (item.agency ? 'Select account...' : 'Select agency first')}
+      </span>
+      {item.agency && <FaChevronDown size={8} className="ml-1 text-gray-300 shrink-0" />}
+    </div>
+  </td>
                     <td className="px-3 py-2">
                       <input type="text" value={item.period_covered}
                         onChange={e => updateItem(item.id, 'period_covered', e.target.value)}
@@ -974,50 +1122,44 @@ const logoBase64 = LOGO_B64;
           </div>
 
           {/* COA Portal */}
-          {activeCoaRow !== null && createPortal(
-            <div ref={coaPortalRef}
-              style={{ position: 'absolute', top: coaDropPos.top, left: coaDropPos.left, width: coaDropPos.width, zIndex: 9999 }}
-              className="flex flex-col overflow-hidden bg-white border border-gray-200 rounded-lg shadow-xl max-h-72">
-              <div className="p-2 border-b border-gray-100 shrink-0">
-                <div style={{ position: 'relative' }}>
-
-                  <FaSearch className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-300" size={10} />
-                  <input type="text" value={coaSearch} onChange={e => setCoaSearch(e.target.value)}
-                    placeholder="Search accounts..." autoFocus
-                    className="w-full pl-8 pr-3 py-1.5 text-xs border border-gray-200 rounded-md focus:outline-none focus:border-blue-400" />
-                </div>
-              </div>
-              <div className="flex-1 p-2 space-y-2 overflow-y-auto">
-                {coaLoading ? (
-                  <div className="flex justify-center py-4">
-                    <div className="w-4 h-4 border-2 border-blue-500 rounded-full border-t-transparent animate-spin" />
-                  </div>
-                ) : Object.keys(groupedCOA).length === 0 ? (
-                  <p className="py-4 text-xs text-center text-gray-400">No accounts found</p>
-                ) : Object.entries(groupedCOA).map(([agency, accts]) => (
-                  <div key={agency}>
-                    <p className="text-[9px] font-bold uppercase tracking-wider text-gray-400 mb-1 px-1">{agency}</p>
-                    {accts.map(a => (
-                      <button key={a.id}
-                        onMouseDown={e => { e.preventDefault(); pickCoaForRow(activeCoaRow, a); }}
-                        className="w-full flex items-center justify-between px-2 py-1.5 rounded hover:bg-blue-50 transition text-left">
-                        <div className="min-w-0">
-                          <p className="text-xs text-gray-700 truncate">{a.account_name}</p>
-                          {a.code && <p className="text-[10px] text-gray-400 font-mono">Code: {a.code}</p>}
-                        </div>
-                        {a.default_amount > 0 && (
-                          <span className="text-[10px] font-mono font-semibold text-blue-500 shrink-0 ml-2">
-                            ₱{fmt(a.default_amount)}
-                          </span>
-                        )}
-                      </button>
-                    ))}
-                  </div>
-                ))}
-              </div>
-            </div>,
-            document.body
+   {activeCoaRow !== null && createPortal(
+  <div ref={coaPortalRef}
+    style={{ position: 'absolute', top: coaDropPos.top, left: coaDropPos.left, width: coaDropPos.width, zIndex: 9999 }}
+    className="flex flex-col overflow-hidden bg-white border border-gray-200 rounded-lg shadow-xl max-h-72">
+    <div className="p-2 border-b border-gray-100 shrink-0">
+      <div style={{ position: 'relative' }}>
+        <FaSearch className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-300" size={10} />
+        <input type="text" value={coaSearch} onChange={e => setCoaSearch(e.target.value)}
+          placeholder="Search accounts..." autoFocus
+          className="w-full pl-8 pr-3 py-1.5 text-xs border border-gray-200 rounded-md focus:outline-none focus:border-blue-400" />
+      </div>
+    </div>
+    <div className="flex-1 p-2 space-y-1 overflow-y-auto">
+      {coaLoading ? (
+        <div className="flex justify-center py-4">
+          <div className="w-4 h-4 border-2 border-blue-500 rounded-full border-t-transparent animate-spin" />
+        </div>
+      ) : filteredCOA.length === 0 ? (
+        <p className="py-4 text-xs text-center text-gray-400">No accounts found</p>
+      ) : filteredCOA.map(a => (
+        <button key={a.id}
+          onMouseDown={e => { e.preventDefault(); pickCoaForRow(activeCoaRow, a); }}
+          className="w-full flex items-center justify-between px-2 py-1.5 rounded hover:bg-blue-50 transition text-left">
+          <div className="min-w-0">
+            <p className="text-xs text-gray-700 truncate">{a.account_name}</p>
+            {a.code && <p className="text-[10px] text-gray-400 font-mono">Code: {a.code}</p>}
+          </div>
+          {a.default_amount > 0 && (
+            <span className="text-[10px] font-mono font-semibold text-blue-500 shrink-0 ml-2">
+              ₱{fmt(a.default_amount)}
+            </span>
           )}
+        </button>
+      ))}
+    </div>
+  </div>,
+  document.body
+)}
 
           {/* ADD ROW */}
           <div className="flex items-center gap-2 px-4 py-3 border-t border-gray-50" ref={addDropRef}>
@@ -1057,12 +1199,31 @@ const logoBase64 = LOGO_B64;
                     placeholder="0.00" min="0" step="0.01"
                     className="w-32 px-2 py-1 font-mono text-sm text-right border border-gray-200 rounded focus:border-blue-300 focus:outline-none" />
                 </div>
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-gray-500">Less: Withholding Tax</span>
-                  <input type="number" value={withholdingTax} onChange={e => setWithholdingTax(e.target.value)}
-                    placeholder="0.00" min="0" step="0.01"
-                    className="w-32 px-2 py-1 font-mono text-sm text-right border border-gray-200 rounded focus:border-blue-300 focus:outline-none" />
-                </div>
+  <div className="flex items-center justify-between text-sm">
+  <span className="text-gray-500">Less: Withholding Tax</span>
+  <div className="flex items-center gap-1.5">
+    <div className="relative">
+      <input
+        type="number"
+        value={withholdingTax}
+        onChange={e => setWithholdingTax(e.target.value)}
+        placeholder="0"
+        min="0"
+        max="100"
+        step="0.01"
+        className="w-16 px-2 py-1 font-mono text-sm text-right border border-gray-200 rounded focus:border-blue-300 focus:outline-none"
+      />
+      <span className="absolute right-1.5 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">%</span>
+    </div>
+    <input
+      type="text"
+      value={fmt(wht)}
+      readOnly
+      disabled
+      className="px-2 py-1 font-mono text-sm text-right text-gray-500 border border-gray-100 rounded cursor-not-allowed w-28 bg-gray-50"
+    />
+  </div>
+</div>
                 <div className="flex items-center justify-between pt-2 border-t border-gray-200">
                   <span className="font-semibold text-gray-800">Total Amount Due</span>
                   <span className="font-mono text-lg font-bold" style={{ color: '#1a5c2e' }}>₱{fmt(totalDue)}</span>
@@ -1281,17 +1442,10 @@ const logoBase64 = LOGO_B64;
   overflow: 'hidden',
   maxHeight: 32
 }}>
-  <img 
-    src="/chinabank_logo.jpg" 
-    style={{ 
-      height: 16, 
-      width: 'auto', 
-      maxWidth: 40,
-      objectFit: 'contain', 
-      flexShrink: 0,
-      display: 'block'
-    }} 
-  />
+<img 
+  src="https://pxzaexutvuatdexgkavk.supabase.co/storage/v1/object/public/assets/chinabank.png" 
+  style={{ height: 16, width: 'auto', maxWidth: 40, objectFit: 'contain', display: 'block' }} 
+/>
   <div>
     <div style={{ fontSize: 8, color: '#333' }}>Bank: China Bank Corporation</div>
     <div style={{ fontSize: 8, color: '#555' }}>Account Number: 1307000000077</div>
@@ -1303,17 +1457,10 @@ const logoBase64 = LOGO_B64;
   overflow: 'hidden',
   maxHeight: 32
 }}>
-  <img 
-    src="/bdo_logo.jpg" 
-    style={{ 
-      height: 16, 
-      width: 'auto', 
-      maxWidth: 40,
-      objectFit: 'contain', 
-      flexShrink: 0,
-      display: 'block'
-    }} 
-  />
+ <img 
+  src="https://pxzaexutvuatdexgkavk.supabase.co/storage/v1/object/public/assets/bdo_logo.jpg" 
+  style={{ height: 16, width: 'auto', maxWidth: 40, objectFit: 'contain', display: 'block' }} 
+/>
   <div>
     <div style={{ fontSize: 8, color: '#333' }}>Bank: Banco De Oro</div>
     <div style={{ fontSize: 8, color: '#555' }}>Account Number: 004500601972</div>

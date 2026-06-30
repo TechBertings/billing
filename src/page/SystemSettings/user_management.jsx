@@ -27,8 +27,8 @@ import {
   userRoleAPI,
 } from "../../lib/supabaseClient";
 import Swal from "sweetalert2";
-import UserRole from "../../Maintenance/UserRole";
-import RolePermissions from "../../Maintenance/RolePermission";
+import UserRole from "../../Maintenance/user_role";
+import RolePermissions from "../../Maintenance/role_permission";
 
 function UserManagement() {
   const [users, setUsers] = useState([]);

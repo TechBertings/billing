@@ -22,7 +22,7 @@ import {
 } from 'react-icons/fa';
 import ReactDOM from 'react-dom';
 import Swal from 'sweetalert2';
-import { filterMenuByRole, loadPermissionsForRole } from '../Maintenance/RolePermission';
+import { filterMenuByRole, loadPermissionsForRole } from '../Maintenance/role_permission';
 
 export const getAllMenuItems = () => [
     {

@@ -156,12 +156,12 @@ function UserRole({ onManagePermissions }) {
     status ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700";
 
   return (
-    <div className="px-6 mx-auto max-w-5xl">
+    <div className="max-w-5xl px-6 mx-auto">
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
           <h2 className="text-3xl font-bold text-blue-600">Role Management</h2>
-          <p className="text-sm text-gray-500 mt-1">
+          <p className="mt-1 text-sm text-gray-500">
             Manage user roles and their permissions.
           </p>
         </div>
@@ -176,21 +176,21 @@ function UserRole({ onManagePermissions }) {
       {/* Roles Table */}
       {isLoading && roles.length === 0 ? (
         <div className="flex items-center justify-center py-20">
-          <FaSync className="animate-spin text-3xl text-blue-600 mr-3" />
+          <FaSync className="mr-3 text-3xl text-blue-600 animate-spin" />
           <span className="text-lg text-gray-600">Loading roles...</span>
         </div>
       ) : (
-        <div className="bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden">
+        <div className="overflow-hidden bg-white border border-gray-200 rounded-lg shadow-sm">
           <table className="w-full text-sm">
-            <thead className="bg-gray-50 border-b border-gray-200">
+            <thead className="border-b border-gray-200 bg-gray-50">
               <tr>
-                <th className="px-6 py-3 text-left font-semibold text-gray-700">
+                <th className="px-6 py-3 font-semibold text-left text-gray-700">
                   Role Name
                 </th>
-                <th className="px-6 py-3 text-center font-semibold text-gray-700">
+                <th className="px-6 py-3 font-semibold text-center text-gray-700">
                   Status
                 </th>
-                <th className="px-6 py-3 text-center font-semibold text-gray-700">
+                <th className="px-6 py-3 font-semibold text-center text-gray-700">
                   Actions
                 </th>
               </tr>
@@ -198,7 +198,7 @@ function UserRole({ onManagePermissions }) {
             <tbody className="divide-y divide-gray-100">
               {roles.length === 0 ? (
                 <tr>
-                  <td colSpan={3} className="text-center py-12 text-gray-400">
+                  <td colSpan={3} className="py-12 text-center text-gray-400">
                     No roles found. Click "Add Role" to create one.
                   </td>
                 </tr>
@@ -206,7 +206,7 @@ function UserRole({ onManagePermissions }) {
                 roles.map((role) => (
                   <tr
                     key={role.id}
-                    className="hover:bg-gray-50 transition-colors"
+                    className="transition-colors hover:bg-gray-50"
                   >
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-2">
@@ -284,7 +284,7 @@ function UserRole({ onManagePermissions }) {
               </h3>
               <button
                 onClick={() => setShowModal(false)}
-                className="text-gray-400 hover:text-gray-600 p-1"
+                className="p-1 text-gray-400 hover:text-gray-600"
               >
                 <FaTimes />
               </button>
@@ -292,7 +292,7 @@ function UserRole({ onManagePermissions }) {
 
             <form onSubmit={handleSubmit} className="p-6 space-y-4">
               {formError && (
-                <div className="p-3 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg">
+                <div className="p-3 text-sm text-red-600 border border-red-200 rounded-lg bg-red-50">
                   {formError}
                 </div>
               )}

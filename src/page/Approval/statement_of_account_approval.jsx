@@ -111,12 +111,11 @@ function buildSOAEmailHTML({
           <td><div style="font-weight:700;color:#222;font-size:8.5px;">BANK TRANSFER/DEPOSIT</div><div style="color:#555;font-size:8px;">Account Name:</div><div style="font-weight:700;color:#222;font-size:8px;">FORTISERV BUSINESS MANAGEMENT ENTERPRISE CO.</div></td>
         </tr></table>
         <table cellpadding="0" cellspacing="0" style="background:#fef2f2;border-radius:4px;padding:4px 6px;margin-bottom:4px;width:100%;"><tr>
-          <td style="padding-right:8px;"><div style="background:#CC0000;border-radius:3px;padding:2px 6px;color:#fff;font-weight:700;font-size:7.5px;white-space:nowrap;">CHINABANK</div></td>
+<td style="padding-right:8px;"><img src="https://pxzaexutvuatdexgkavk.supabase.co/storage/v1/object/public/assets/chinabank.png" height="20" style="display:block;object-fit:contain;" /></td>
           <td><div style="font-size:7.5px;color:#333;">Bank: China Bank Corporation</div><div style="font-size:7.5px;color:#555;">Account Number: 1307000000077</div></td>
         </tr></table>
         <table cellpadding="0" cellspacing="0" style="background:#eff4fb;border-radius:4px;padding:4px 6px;width:100%;"><tr>
-          <td style="padding-right:8px;"><div style="background:#003087;border-radius:3px;padding:2px 8px;color:#fff;font-weight:900;font-size:9px;white-space:nowrap;">BDO</div></td>
-          <td><div style="font-size:7.5px;color:#333;">Bank: Banco De Oro</div><div style="font-size:7.5px;color:#555;">Account Number: 004500601972</div></td>
+<td style="padding-right:8px;"><img src="https://pxzaexutvuatdexgkavk.supabase.co/storage/v1/object/public/assets/bdo_logo.jpg" height="20" style="display:block;object-fit:contain;" /></td>          <td><div style="font-size:7.5px;color:#333;">Bank: Banco De Oro</div><div style="font-size:7.5px;color:#555;">Account Number: 004500601972</div></td>
         </tr></table>
       </td>
       <td width="33%" valign="top" style="padding:14px 16px;border-right:1px solid #dceee3;font-size:8.5px;">
@@ -785,12 +784,14 @@ export default function SOAApproval({ currentUser }) {
                             <div style={{ fontWeight: 700, color: '#222', fontSize: 7.5 }}>FORTISERV BUSINESS MANAGEMENT ENTERPRISE CO.</div>
                           </div>
                         </div>
-                        <div className="flex items-center gap-2 rounded mb-1.5 p-1.5" style={{ background: '#fef2f2', overflow: 'hidden', maxHeight: 32 }}>
-                          <img src="/chinabank_logo.jpg" style={{ height: 16, width: 'auto', maxWidth: 40, objectFit: 'contain', flexShrink: 0, display: 'block' }} alt="Chinabank" />
+                       <div className="flex items-center gap-2 rounded mb-1.5 p-1.5" style={{ background: '#fef2f2', overflow: 'hidden', maxHeight: 32 }}>
+  <img src="https://pxzaexutvuatdexgkavk.supabase.co/storage/v1/object/public/assets/chinabank.png"
+       style={{ height: 16, width: 'auto', maxWidth: 40, objectFit: 'contain', display: 'block' }} />
                           <div><div style={{ fontSize: 8, color: '#333' }}>Bank: China Bank Corporation</div><div style={{ fontSize: 8, color: '#555' }}>Account Number: 1307000000077</div></div>
                         </div>
-                        <div className="flex items-center gap-2 rounded p-1.5" style={{ background: '#eff4fb', overflow: 'hidden', maxHeight: 32 }}>
-                          <img src="/bdo_logo.jpg" style={{ height: 16, width: 'auto', maxWidth: 40, objectFit: 'contain', flexShrink: 0, display: 'block' }} alt="BDO" />
+                        <div className="flex items-center gap-2 rounded mb-1.5 p-1.5" style={{ background: '#fef2f2', overflow: 'hidden', maxHeight: 32 }}>
+  <img src="https://pxzaexutvuatdexgkavk.supabase.co/storage/v1/object/public/assets/chinabank.png"
+       style={{ height: 16, width: 'auto', maxWidth: 40, objectFit: 'contain', display: 'block' }} />
                           <div><div style={{ fontSize: 8, color: '#333' }}>Bank: Banco De Oro</div><div style={{ fontSize: 8, color: '#555' }}>Account Number: 004500601972</div></div>
                         </div>
                       </div>

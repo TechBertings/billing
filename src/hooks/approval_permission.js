@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { canApprovePage, loadPermissionsForRole } from '../Maintenance/RolePermission';
+import { canApprovePage, loadPermissionsForRole } from '../Maintenance/role_permission';
 
 export function useApprovalPermission(currentUser, pageKey) {
   const [canApprove, setCanApprove] = useState(false);

@@ -22,7 +22,6 @@ const Account = () => {
   const [records, setRecords] = useState([]);
   const [search, setSearch] = useState("");
   const [fetching, setFetching] = useState(true);
-
   const [modalOpen, setModalOpen] = useState(false);
   const [editTarget, setEditTarget] = useState(null);
   const [acctCode, setAcctCode] = useState("");

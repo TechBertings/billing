@@ -1,17 +1,17 @@
 import React, { useState } from "react";
 import { ArrowLeft, HelpCircle, Building2 } from "lucide-react";
-import SecretQuestions        from "../../Maintenance/SecretQuestion";
-import RolePermissions        from "../../Maintenance/RolePermission";
-import UserRole               from "../../Maintenance/UserRole";
-import Status                 from "../../Maintenance/Status";
-import TaxType                from "../../Maintenance/TaxType";
-import BusinessRegistration   from "../../Maintenance/BusinessRegistration";
-import LineOfBusiness         from "../../Maintenance/LineOfBusiness";
-import SourceOfIncome         from "../../Maintenance/SourceOfIncome";
-import TaxPayerClassification from "../../Maintenance/TaxPayerClassification";
-import VatType                from "../../Maintenance/VatType";
-import SalaryBracket          from "../../Maintenance/SalaryBracket";
-import Account                from "../../Maintenance/Account";
+import SecretQuestions        from "../../Maintenance/secret_question";
+import RolePermissions        from "../../Maintenance/role_permission";
+import UserRole               from "../../Maintenance/user_role";
+import Status                 from "../../Maintenance/status";
+import TaxType                from "../../Maintenance/tax_type";
+import BusinessRegistration   from "../../Maintenance/business_registration";
+import LineOfBusiness         from "../../Maintenance/line_of_business";
+import SourceOfIncome         from "../../Maintenance/source_of_income";
+import TaxPayerClassification from "../../Maintenance/tax_payer_classification";
+import VatType                from "../../Maintenance/vat_type";
+import SalaryBracket          from "../../Maintenance/salary_bracket";
+import Account                from "../../Maintenance/account";
 import GovernmentAgency       from "../../Maintenance/government_agency"; 
 
 const Maintenance = () => {
