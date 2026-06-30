@@ -192,7 +192,7 @@ export default function ClientProfile() {
   // ✅ CHANGE 1: Auto-set status to "Existing" after dropdowns load
   useEffect(() => {
     if (!ddLoading && dropdowns.status.length > 0) {
-      setFormData((p) => ({ ...p, status: p.status || "Existing" }));
+      setFormData((p) => ({ ...p, status: p.status || "Active" }));
     }
   }, [ddLoading]);
 
@@ -244,8 +244,23 @@ export default function ClientProfile() {
     );
   };
 
+  const isValidEmail = (email) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
+
   // ─── SUBMIT ─────────────────────────────────────────────────────────────────
   const handleSubmit = async () => {
+  // ✅ Required email validation
+  if (!formData.email_address || !formData.email_address.trim()) {
+    setMessage("❌ Email Address is required. Please go to Step 6 (Contact Info) and enter a valid email.");
+    setMessageType("error");
+    setStep(6);
+    return;
+  }
+  if (!isValidEmail(formData.email_address)) {
+    setMessage("❌ Please enter a valid email address (e.g. name@example.com).");
+    setMessageType("error");
+    setStep(6);
+    return;
+  }
     setLoading(true);
     setMessage("");
     try {

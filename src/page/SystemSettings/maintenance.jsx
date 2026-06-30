@@ -13,6 +13,7 @@ import VatType                from "../../Maintenance/vat_type";
 import SalaryBracket          from "../../Maintenance/salary_bracket";
 import Account                from "../../Maintenance/account";
 import GovernmentAgency       from "../../Maintenance/government_agency"; 
+import Period                 from "../../Maintenance/period";
 
 const Maintenance = () => {
   const [selectedModule, setSelectedModule] = useState(null);
@@ -31,7 +32,8 @@ const Maintenance = () => {
     { id: "VatType",                 name: "VAT Type",                  description: "Manage VAT types",                                icon: HelpCircle },
     { id: "SalaryBracket",           name: "Salary Bracket",            description: "Manage salary brackets",                          icon: HelpCircle },
     { id: "Account",                 name: "Account",                   description: "Manage user accounts",                            icon: HelpCircle },
-    { id: "GovernmentAgency",        name: "Government Agency",         description: "Manage agencies used in Chart of Accounts tabs",  icon: Building2  }, // ← new
+    { id: "GovernmentAgency",        name: "Government Agency",         description: "Manage agencies used in Chart of Accounts tabs",  icon: Building2  }, 
+    { id: "Period", name: "Period", description: "Date period", icon: Building2 }, // ← new
   ];
 
   const filteredModules = sortBy === "all" ? modules : modules.filter(m => m.id === sortBy);
@@ -53,7 +55,8 @@ const Maintenance = () => {
       case "VatType":                return <VatType />;
       case "SalaryBracket":          return <SalaryBracket />;
       case "Account":                return <Account />;
-      case "GovernmentAgency":       return <GovernmentAgency />;           // ← new
+      case "GovernmentAgency":       return <GovernmentAgency />;  
+      case "Period":                 return <Period />;           // ← new
       default:                       return null;
     }
   };

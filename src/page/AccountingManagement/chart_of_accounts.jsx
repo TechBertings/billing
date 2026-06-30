@@ -266,44 +266,44 @@ const toggleAll = () =>
     setShowModal(true);
   };
 
-  const handleSave = async () => {
-    if (!form.account_name.trim()) {
-      flash("Account name is required.", "error");
-      return;
-    }
-    if (!form.agency_id) {
-      flash("Government agency is required.", "error");
-      return;
-    }
-    setSaving(true);
-
-    // "agency" column is a NOT NULL text field — fill it from the selected agency's name
-    const selectedAgency = agencies.find((a) => a.id === form.agency_id);
-
-    const payload = {
-      code: form.code.trim() || null,
-      agency_id: form.agency_id, // uuid FK
-      agency: selectedAgency?.name || "", // required text column
-      account_name: form.account_name.trim(),
-      is_active: form.is_active,
-    };
-
-    const { error } = editing
-      ? await supabase
-          .from("chart_of_accounts")
-          .update(payload)
-          .eq("id", editing.id)
-      : await supabase.from("chart_of_accounts").insert([payload]);
-
-    if (error) flash(`Error: ${error.message}`, "error");
-    else {
-      flash(editing ? "Account updated." : "Account added.");
-      setShowModal(false);
-      fetchAccounts();
-      setSelected(new Set());
-    }
-    setSaving(false);
+const handleSave = async () => {
+  if (!form.name.trim()) { flash('Agency name is required.', 'error'); return; }
+  setSaving(true);
+  const newName = form.name.trim();
+  const payload = {
+    name:        newName,
+    description: form.description.trim(),
+    is_active:   form.is_active,
   };
+  const { error } = editing
+    ? await supabase.from('government_agencies').update(payload).eq('id', editing.id)
+    : await supabase.from('government_agencies').insert([payload]);
+
+  if (error) { flash(`Error: ${error.message}`, 'error'); setSaving(false); return; }
+
+  // Cascade: kung nag-edit at nagbago ang pangalan, i-update din ang lahat
+  // ng chart_of_accounts rows na gumagamit ng dating pangalan ng agency na ito,
+  // para hindi mawala ang koneksyon nila sa Billing form.
+  if (editing && editing.name !== newName) {
+    const { error: coaError } = await supabase
+      .from('chart_of_accounts')
+      .update({ agency: newName })
+      .eq('agency', editing.name);
+
+    if (coaError) {
+      flash(`Agency saved, pero may error sa pag-sync ng Chart of Accounts: ${coaError.message}`, 'error');
+      setShowModal(false);
+      fetchAgencies();
+      setSaving(false);
+      return;
+    }
+  }
+
+  flash(editing ? '✓ Agency updated (kasama ang naka-link na Chart of Accounts).' : '✓ Agency added.');
+  setShowModal(false);
+  fetchAgencies();
+  setSaving(false);
+};
 
   const handleDelete = async (id) => {
     await supabase.from("chart_of_accounts").delete().eq("id", id);

@@ -471,6 +471,19 @@ const logoBase64 = LOGO_B64;
 
   const [agencies, setAgencies] = useState([]);
 
+  const [periods, setPeriods] = useState([]);
+
+const fetchPeriods = useCallback(async () => {
+  const { data } = await supabase
+    .from('period')
+    .select('id, period')
+    .eq('is_active', true)
+    .order('period');
+  setPeriods(data || []);
+}, []);
+
+useEffect(() => { fetchPeriods(); }, [fetchPeriods]);
+
 const fetchAgencies = useCallback(async () => {
   const { data } = await supabase
     .from('government_agencies')
@@ -1097,11 +1110,16 @@ const resetForm = () => {
       {item.agency && <FaChevronDown size={8} className="ml-1 text-gray-300 shrink-0" />}
     </div>
   </td>
-                    <td className="px-3 py-2">
-                      <input type="text" value={item.period_covered}
+                 <td className="px-3 py-2">
+                      <select
+                        value={item.period_covered}
                         onChange={e => updateItem(item.id, 'period_covered', e.target.value)}
-                        placeholder="Not Applicable"
-                        className="w-full px-2 py-1.5 text-xs border border-transparent rounded focus:border-blue-300 focus:outline-none focus:bg-white bg-transparent transition" />
+                        className="w-full px-2 py-1.5 text-xs border border-transparent rounded focus:border-blue-300 focus:outline-none focus:bg-white bg-transparent transition cursor-pointer"
+                      >
+                        {periods.map(p => (
+                          <option key={p.id} value={p.period}>{p.period}</option>
+                        ))}
+                      </select>
                     </td>
                     <td className="px-3 py-2">
                       <input type="number" value={item.amount}
