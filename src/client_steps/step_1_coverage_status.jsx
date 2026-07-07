@@ -1,18 +1,5 @@
 import React from "react";
-
-const inputCls =
-  "w-full px-4 py-2.5 text-sm border-2 rounded-lg border-slate-200 focus:border-blue-500 focus:outline-none transition bg-white text-slate-800 placeholder-slate-400";
-const selectCls =
-  "w-full px-4 py-2.5 text-sm border-2 rounded-lg border-slate-200 focus:border-blue-500 focus:outline-none transition bg-white text-slate-800 cursor-pointer";
-
-const Field = ({ label, children, span2 }) => (
-  <div className={span2 ? "md:col-span-2" : ""}>
-    <label className="block mb-1.5 text-xs font-semibold tracking-wide uppercase text-slate-500">
-      {label}
-    </label>
-    {children}
-  </div>
-);
+import { inputCls, selectCls, disabledInputCls, Field } from "./shared_ui";
 
 export default function Step1CoverageStatus({ formData, handleChange, dropdowns, ddLoading }) {
   return (
@@ -23,7 +10,7 @@ export default function Step1CoverageStatus({ formData, handleChange, dropdowns,
           type="text"
           value={formData.client_id_number}
           disabled
-          className="w-full px-4 py-2.5 text-sm font-mono font-semibold text-blue-600 bg-blue-50 border-2 border-blue-200 rounded-lg cursor-not-allowed"
+          className={disabledInputCls}
         />
       </Field>
 

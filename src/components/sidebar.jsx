@@ -38,7 +38,7 @@ export const getAllMenuItems = () => [
         submenu: [
             { icon: <FaUser />, label: 'Create Client Profile', path: 'ClientProfile' },
             { icon: <FaUser />, label: 'Client Profile List', path: 'ClientProfileList' },
-           // { icon: <FaUsers />, label: 'Create Employees Profile', path: 'EmployeeProfile' },
+            { icon: <FaUsers />, label: 'Create Employees Profile', path: 'EmployeeProfile' },
            // { icon: <FaUsers />, label: 'Employees Profile List', path: 'employees-list' },
            // { icon: <FaClipboardList />, label: 'Billing Information', path: 'BillingInformation' },
            // { icon: <FaClipboardList />, label: 'Job Orders', path: 'JobOrder' , badge: true},

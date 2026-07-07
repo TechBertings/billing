@@ -1,33 +1,6 @@
 import React from "react";
+import { inputCls, Field, RadioGroup } from "./shared_ui";
 
-const inputCls =
-  "w-full px-4 py-2.5 text-sm border-2 rounded-lg border-slate-200 focus:border-blue-500 focus:outline-none transition bg-white text-slate-800 placeholder-slate-400";
-
-const Field = ({ label, children, span2 }) => (
-  <div className={span2 ? "md:col-span-2" : ""}>
-    <label className="block mb-1.5 text-xs font-semibold tracking-wide uppercase text-slate-500">
-      {label}
-    </label>
-    {children}
-  </div>
-);
-
-const RadioGroup = ({ name, value, onChange, options }) => (
-  <div className="flex flex-col gap-2 mt-1">
-    {options.map((opt) => (
-      <label key={opt} className="flex items-center gap-3 cursor-pointer group">
-        <div
-          onClick={() => onChange({ target: { name, value: opt } })}
-          className={`w-4 h-4 rounded-full border-2 flex items-center justify-center transition cursor-pointer
-            ${value === opt ? "border-blue-500 bg-blue-500" : "border-slate-300 group-hover:border-blue-400"}`}
-        >
-          {value === opt && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
-        </div>
-        <span className="text-sm text-slate-700">{opt}</span>
-      </label>
-    ))}
-  </div>
-);
 
 export default function Step5OwnerDetails({ formData, handleChange }) {
   const isSoleProp  = formData.business_registration === "Sole Proprietor";
@@ -37,35 +10,22 @@ export default function Step5OwnerDetails({ formData, handleChange }) {
     <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
 
       {/* ─── Entity Type — auto-locked from business_registration ─── */}
-      <Field label="Entity Type" span2>
-        <div className="flex gap-4 mt-1">
-          {isSoleProp && (
-            <div className="flex items-center gap-3 px-5 py-3 text-blue-600 border-2 border-blue-500 cursor-default rounded-xl bg-blue-50">
-              <div className="flex items-center justify-center w-4 h-4 bg-blue-500 border-2 border-blue-500 rounded-full">
-                <div className="w-1.5 h-1.5 rounded-full bg-white" />
-              </div>
-              <span className="text-sm font-semibold">Sole Proprietor</span>
+<Field label="Entity Type" span2>
+        <div className="flex gap-3 mt-1">
+          {(isSoleProp || isCorporate) && (
+            <div className="flex items-center gap-2.5 px-4 py-2 text-sm font-semibold border rounded-md text-slate-700 bg-slate-50 border-slate-300">
+              {isSoleProp ? "Sole Proprietor" : "Corporation"}
             </div>
           )}
-
-          {isCorporate && (
-            <div className="flex items-center gap-3 px-5 py-3 text-blue-600 border-2 border-blue-500 cursor-default rounded-xl bg-blue-50">
-              <div className="flex items-center justify-center w-4 h-4 bg-blue-500 border-2 border-blue-500 rounded-full">
-                <div className="w-1.5 h-1.5 rounded-full bg-white" />
-              </div>
-              <span className="text-sm font-semibold">Corporation</span>
-            </div>
-          )}
-
           {!formData.business_registration && (
             <p className="text-sm text-slate-400">
-              ⚠️ Select a Business Registration in Step 2 first.
+              Select a Business Registration in Step 2 first.
             </p>
           )}
         </div>
         {formData.business_registration && (
-          <p className="mt-1.5 text-xs text-blue-400">
-            ⚡ Auto-set from Business Registration ({formData.business_registration})
+          <p className="mt-1.5 text-xs text-slate-400">
+            Auto-set from Business Registration ({formData.business_registration})
           </p>
         )}
       </Field>

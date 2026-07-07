@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { ArrowLeft, HelpCircle, Building2 } from "lucide-react";
+import { ArrowLeft, HelpCircle, Building2, Home, Landmark } from "lucide-react";
 import SecretQuestions        from "../../Maintenance/secret_question";
 import RolePermissions        from "../../Maintenance/role_permission";
 import UserRole               from "../../Maintenance/user_role";
@@ -14,6 +14,8 @@ import SalaryBracket          from "../../Maintenance/salary_bracket";
 import Account                from "../../Maintenance/account";
 import GovernmentAgency       from "../../Maintenance/government_agency"; 
 import Period                 from "../../Maintenance/period";
+import RentFees                from "../../Maintenance/rent_fees";
+import ContributionRates       from "../../Maintenance/contribution_rates"; // ← new
 
 const Maintenance = () => {
   const [selectedModule, setSelectedModule] = useState(null);
@@ -33,7 +35,9 @@ const Maintenance = () => {
     { id: "SalaryBracket",           name: "Salary Bracket",            description: "Manage salary brackets",                          icon: HelpCircle },
     { id: "Account",                 name: "Account",                   description: "Manage user accounts",                            icon: HelpCircle },
     { id: "GovernmentAgency",        name: "Government Agency",         description: "Manage agencies used in Chart of Accounts tabs",  icon: Building2  }, 
-    { id: "Period", name: "Period", description: "Date period", icon: Building2 }, // ← new
+    { id: "Period",                  name: "Period",                    description: "Date period",                                      icon: Building2 },
+    { id: "RentFees",                name: "Rent Fees",                 description: "Manage rental term schedules (Net of VAT, VAT, WTAX per year)", icon: Home },
+    { id: "ContributionRates",       name: "Contribution Rates",        description: "Manage SSS, PhilHealth, and Pag-IBIG rate schedules", icon: Landmark }, // ← new
   ];
 
   const filteredModules = sortBy === "all" ? modules : modules.filter(m => m.id === sortBy);
@@ -56,7 +60,9 @@ const Maintenance = () => {
       case "SalaryBracket":          return <SalaryBracket />;
       case "Account":                return <Account />;
       case "GovernmentAgency":       return <GovernmentAgency />;  
-      case "Period":                 return <Period />;           // ← new
+      case "Period":                 return <Period />;
+      case "RentFees":               return <RentFees />;
+      case "ContributionRates":      return <ContributionRates />; // ← new
       default:                       return null;
     }
   };

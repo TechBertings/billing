@@ -1,16 +1,5 @@
 import React from "react";
-
-const inputCls =
-  "w-full px-4 py-2.5 text-sm border-2 rounded-lg border-slate-200 focus:border-blue-500 focus:outline-none transition bg-white text-slate-800 placeholder-slate-400";
-
-const Field = ({ label, children, span2 }) => (
-  <div className={span2 ? "md:col-span-2" : ""}>
-    <label className="block mb-1.5 text-xs font-semibold tracking-wide uppercase text-slate-500">
-      {label}
-    </label>
-    {children}
-  </div>
-);
+import { inputCls, Field } from "./shared_ui";
 
 export default function Step3TaxRegistration({ formData, handleChange }) {
   const isSoleProp = formData.business_registration === "Sole Proprietor";

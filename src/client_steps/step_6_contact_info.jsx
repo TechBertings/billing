@@ -1,19 +1,8 @@
 import React from "react";
-
-const inputCls =
-  "w-full px-4 py-2.5 text-sm border-2 rounded-lg border-slate-200 focus:border-blue-500 focus:outline-none transition bg-white text-slate-800 placeholder-slate-400";
+import { inputCls, Field } from "./shared_ui";
 
 const errorInputCls =
-  "w-full px-4 py-2.5 text-sm border-2 rounded-lg border-red-300 focus:border-red-500 focus:outline-none transition bg-red-50 text-slate-800 placeholder-slate-400";
-
-const Field = ({ label, children, span2, required }) => (
-  <div className={span2 ? "md:col-span-2" : ""}>
-    <label className="block mb-1.5 text-xs font-semibold tracking-wide uppercase text-slate-500">
-      {label} {required && <span className="text-red-500">*</span>}
-    </label>
-    {children}
-  </div>
-);
+  "w-full px-3 py-2 text-sm border border-red-300 rounded-md bg-red-50 text-slate-800 placeholder-slate-400 focus:outline-none focus:border-red-500 transition";
 
 const isValidEmail = (email) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
 

@@ -11,9 +11,10 @@ export const MaintenanceModal = ({
 }) => {
   if (!open) return null;
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm">
-      <div className="w-full max-w-md p-6 mx-4 bg-white border border-green-100 shadow-2xl rounded-2xl">
-        <div className="flex items-center justify-between mb-5">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/30 backdrop-blur-sm">
+      <div className="w-full max-w-md max-h-[90vh] bg-white border border-green-100 shadow-2xl rounded-2xl flex flex-col overflow-hidden">
+        {/* Sticky header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b shrink-0 border-slate-100">
           <h2 className="text-lg font-bold text-slate-800">{title}</h2>
           <button
             onClick={onClose}
@@ -23,35 +24,47 @@ export const MaintenanceModal = ({
           </button>
         </div>
 
-        <div className="space-y-4">
-          {fields.map((field, i) => (
-            <div key={i}>
-              <label className="block mb-1 text-xs font-semibold tracking-wider uppercase text-slate-500">
-                {field.label}
-              </label>
-              {field.readOnly ? (
-                <>
-                  <div className="flex items-center w-full px-1 py-2.5 border border-slate-200 rounded-xl bg-slate-50 text-sm tracking-widest select-none">
-                    <span className="w-2 h-2 mr-2 rounded-full shrink-0" />
-                    {field.value}
-                  </div>
-                  <p className="mt-1 text-xs text-slate-400">
-                    Auto-generated · read only
-                  </p>
-                </>
-              ) : (
-                <input
-                  value={field.value}
-                  onChange={(e) => field.onChange(e.target.value)}
-                  placeholder={field.placeholder || ""}
-                  className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-green-300 focus:border-green-400 transition"
-                />
-              )}
-            </div>
-          ))}
+        {/* Scrollable body */}
+        <div className="flex-1 px-6 py-5 space-y-4 overflow-y-auto">
+ {fields.map((field, i) => (
+  <div key={i}>
+    <label className="block mb-1 text-xs font-semibold tracking-wider uppercase text-slate-500">
+      {field.label}
+    </label>
+    {field.readOnly ? (
+      <>
+        <div className="flex items-center w-full px-1 py-2.5 border border-slate-200 rounded-xl bg-slate-50 text-sm tracking-widest select-none">
+          <span className="w-2 h-2 mr-2 rounded-full shrink-0" />
+          {field.value}
+        </div>
+        <p className="mt-1 text-xs text-slate-400">
+          Auto-generated · read only
+        </p>
+      </>
+    ) : field.type === "select" ? (
+      <select
+        value={field.value}
+        onChange={(e) => field.onChange(e.target.value)}
+        className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-green-300 focus:border-green-400 transition bg-white"
+      >
+        {field.options.map((opt) => (
+          <option key={opt.value} value={opt.value}>{opt.label}</option>
+        ))}
+      </select>
+    ) : (
+      <input
+        value={field.value}
+        onChange={(e) => field.onChange(e.target.value)}
+        placeholder={field.placeholder || ""}
+        className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-green-300 focus:border-green-400 transition"
+      />
+    )}
+  </div>
+))}
         </div>
 
-        <div className="flex justify-end gap-3 mt-6">
+        {/* Sticky footer */}
+        <div className="flex justify-end gap-3 px-6 py-4 border-t shrink-0 border-slate-100">
           <button
             onClick={onClose}
             className="px-4 py-2 text-sm font-semibold transition text-slate-600 bg-slate-100 rounded-xl hover:bg-slate-200"
@@ -238,19 +251,21 @@ const CustomerMaintenanceTable = ({
                   i !== rows.length - 1 ? "border-b border-slate-100" : ""
                 }`}
               >
-                {columns.map((col) => (
-                  <div key={col.key}>
-                    {col.badge ? (
-                      <span className="inline-flex items-center px-2.5 py-1 rounded-lg  text-xs font-bold tracking-wider">
-                        {row[col.key] || "—"}
-                      </span>
-                    ) : (
-                      <span className="text-sm font-semibold text-slate-700">
-                        {row[col.key] || "—"}
-                      </span>
-                    )}
-                  </div>
-                ))}
+              {columns.map((col) => (
+  <div key={col.key}>
+    {col.render ? (
+      col.render(row)
+    ) : col.badge ? (
+      <span className="inline-flex items-center px-2.5 py-1 rounded-lg  text-xs font-bold tracking-wider">
+        {row[col.key] || "—"}
+      </span>
+    ) : (
+      <span className="text-sm font-semibold text-slate-700">
+        {row[col.key] || "—"}
+      </span>
+    )}
+  </div>
+))}
 
                 {/* Actions */}
                 <div className="flex items-center justify-end gap-2 w-[160px]">
