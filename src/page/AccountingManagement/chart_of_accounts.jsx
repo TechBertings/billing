@@ -1,4 +1,10 @@
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, {
+  useState,
+  useEffect,
+  useCallback,
+  useMemo,
+  useRef,
+} from "react";
 import { supabase } from "../../lib/supabaseClient";
 import {
   FaPlus,
@@ -16,6 +22,8 @@ import {
   FaChevronDown,
   FaPrint,
   FaDownload,
+  FaLayerGroup,
+  FaBuilding,
 } from "react-icons/fa";
 import jsPDF from "jspdf";
 import html2canvas from "html2canvas";
@@ -28,7 +36,6 @@ const selectCls =
 
 const COMPANY = "Fortiserv Business Management Enterprise Co.";
 
-
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 const fmtDate = () =>
   new Date().toLocaleDateString("en-PH", {
@@ -37,19 +44,11 @@ const fmtDate = () =>
     day: "numeric",
   });
 
-const fmtDateShort = () =>
-  new Date().toLocaleDateString("en-PH", {
-    year: "numeric",
-    month: "short",
-    day: "2-digit",
-  });
-
-// ─── Export CSV ───────────────────────────────────────────────────────────────
-const exportCSV = (accounts) => {
-  const headers = ["Code", "Government Agency", "Account Name", "Status"];
+// ─── Export CSV (scoped to the accounts currently loaded, i.e. active agency) ─
+const exportCSV = (accounts, agencyName) => {
+  const headers = ["Code", "Account Name", "Status"];
   const rows = accounts.map((a) => [
     a.code || "",
-    a.government_agencies?.name || "",
     a.account_name || "",
     a.is_active ? "Active" : "Inactive",
   ]);
@@ -60,7 +59,8 @@ const exportCSV = (accounts) => {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = `chart_of_accounts_${new Date().toISOString().slice(0, 10)}.csv`;
+  const safeAgency = (agencyName || "accounts").replace(/[^a-z0-9]+/gi, "_");
+  a.download = `chart_of_accounts_${safeAgency}_${new Date().toISOString().slice(0, 10)}.csv`;
   a.click();
   URL.revokeObjectURL(url);
 };
@@ -123,11 +123,36 @@ function PdfDropdown({ onPrint, onExportPdf }) {
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 export default function ChartOfAccounts() {
-  const [accounts, setAccounts] = useState([]);
+  // ── LEVEL 1: Groups ──────────────────────────────────────────────────────
+  const [groups, setGroups] = useState([]);
+  const [loadingGroups, setLoadingGroups] = useState(true);
+  const [activeGroupId, setActiveGroupId] = useState(null);
+
+  const [showGroupModal, setShowGroupModal] = useState(false);
+  const [editingGroup, setEditingGroup] = useState(null);
+  const [groupForm, setGroupForm] = useState({ label: "", is_active: true });
+  const [deleteConfirmGroup, setDeleteConfirmGroup] = useState(null);
+  const [savingGroup, setSavingGroup] = useState(false);
+
+  // ── LEVEL 2: Agencies (scoped to active group) ──────────────────────────
   const [agencies, setAgencies] = useState([]);
+  const [loadingAgencies, setLoadingAgencies] = useState(true);
+  const [activeAgencyId, setActiveAgencyId] = useState(null);
+
+  const [showAgencyModal, setShowAgencyModal] = useState(false);
+  const [editingAgency, setEditingAgency] = useState(null);
+  const [agencyForm, setAgencyForm] = useState({
+    name: "",
+    description: "",
+    is_active: true,
+  });
+  const [deleteConfirmAgency, setDeleteConfirmAgency] = useState(null);
+  const [savingAgency, setSavingAgency] = useState(false);
+
+  // ── LEVEL 3: Accounts (scoped to active agency) ─────────────────────────
+  const [accounts, setAccounts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
-  const [activeTab, setActiveTab] = useState("All");
   const [sortField, setSortField] = useState("code");
   const [sortDir, setSortDir] = useState("asc");
   const [showModal, setShowModal] = useState(false);
@@ -142,75 +167,146 @@ export default function ChartOfAccounts() {
   const importRef = useRef();
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
+    const [taxTypes, setTaxTypes] = useState([]);
 
-  const emptyForm = {
+
+const emptyForm = {
     code: "",
-    agency_id: "",
     account_name: "",
     is_active: true,
+    billing_mode: "flat",
+    tax_setup_id: "",
+    contribution_key: "",
   };
   const [form, setForm] = useState(emptyForm);
 
-  // ── Fetch ──────────────────────────────────────────────────────────────────
-  const fetchAgencies = useCallback(async () => {
-    const { data } = await supabase
-      .from("government_agencies")
+  const activeGroup = groups.find((g) => g.id === activeGroupId) || null;
+  const activeAgency = agencies.find((a) => a.id === activeAgencyId) || null;
+
+  // ── Flash ──────────────────────────────────────────────────────────────
+  const flash = (msg, type = "success") => {
+    setMessage(msg);
+    setMessageType(type);
+    setTimeout(() => setMessage(""), 3500);
+  };
+
+  // ── FETCH: Groups ─────────────────────────────────────────────────────
+  const fetchGroups = useCallback(async () => {
+    setLoadingGroups(true);
+    const { data, error } = await supabase
+      .from("fee_groups")
       .select("*")
-      .eq("is_active", true)
-      .order("name");
-    setAgencies(data || []);
+      .order("sort_order", { ascending: true })
+      .order("label", { ascending: true });
+
+    if (error) {
+      flash(`Error loading groups: ${error.message}`, "error");
+    } else {
+      setGroups(data || []);
+      setActiveGroupId((prev) => prev ?? (data && data[0] ? data[0].id : null));
+    }
+    setLoadingGroups(false);
   }, []);
 
+  // ── FETCH: Agencies (scoped to active group) ────────────────────────────
+  const fetchAgencies = useCallback(async () => {
+    if (!activeGroupId) {
+      setAgencies([]);
+      setActiveAgencyId(null);
+      setLoadingAgencies(false);
+      return;
+    }
+    setLoadingAgencies(true);
+    const { data, error } = await supabase
+      .from("government_agencies")
+      .select("*")
+      .eq("group_id", activeGroupId)
+      .order("sort_order", { ascending: true })
+      .order("name", { ascending: true });
+
+    if (error) {
+      flash(`Error loading agencies: ${error.message}`, "error");
+    } else {
+      setAgencies(data || []);
+      setActiveAgencyId(data && data[0] ? data[0].id : null);
+    }
+    setLoadingAgencies(false);
+  }, [activeGroupId]);
+
+  // ── FETCH: Accounts (scoped to active agency) ───────────────────────────
   const fetchAccounts = useCallback(async () => {
+    if (!activeAgencyId) {
+      setAccounts([]);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     const { data, error } = await supabase
       .from("chart_of_accounts")
-      .select("*, government_agencies(id, name)")
+      .select("*, government_agencies(id, name), tax_setup(id, label, computation_type)")
+      .eq("agency_id", activeAgencyId)
       .order("code", { ascending: true, nullsFirst: false });
     if (error) flash(`Error: ${error.message}`, "error");
     else setAccounts(data || []);
     setLoading(false);
+  }, [activeAgencyId]);
+
+const fetchTaxTypes = useCallback(async () => {
+    const { data, error } = await supabase
+      .from("tax_setup")
+      .select("id, label, computation_type")
+      .eq("is_active", true)
+      .order("label", { ascending: true });
+    if (!error) setTaxTypes(data || []);
   }, []);
 
   useEffect(() => {
+    fetchGroups();
+  }, [fetchGroups]);
+  useEffect(() => {
     fetchAgencies();
+  }, [fetchAgencies]);
+  useEffect(() => {
     fetchAccounts();
-  }, [fetchAgencies, fetchAccounts]);
+  }, [fetchAccounts]);
+  useEffect(() => {
+    fetchTaxTypes();
+  }, [fetchTaxTypes]);
 
   useEffect(() => {
-  setCurrentPage(1);
-}, [search, activeTab, pageSize]);
+    setCurrentPage(1);
+    setSelected(new Set());
+  }, [search, pageSize, activeAgencyId]);
 
-  // ── Filter + Sort ──────────────────────────────────────────────────────────
-  const filtered = accounts.filter((a) => {
-    const ag = a.government_agencies?.name || "";
-    const matchTab = activeTab === "All" || ag === activeTab;
+  // ── Filter + Sort ────────────────────────────────────────────────────────
+  const filtered = useMemo(() => {
     const q = search.toLowerCase();
-    return (
-      matchTab &&
-      (!q ||
-        [a.code, a.account_name, ag].some((v) =>
+    return accounts.filter(
+      (a) =>
+        !q ||
+        [a.code, a.account_name].some((v) =>
           (v || "").toLowerCase().includes(q),
-        ))
+        ),
     );
-  });
+  }, [accounts, search]);
 
-  const sorted = [...filtered].sort((a, b) => {
-    const av = (a[sortField] || "").toString().toLowerCase();
-    const bv = (b[sortField] || "").toString().toLowerCase();
-    const cmp = av.localeCompare(bv, undefined, {
-      numeric: sortField === "code",
+  const sorted = useMemo(() => {
+    return [...filtered].sort((a, b) => {
+      const av = (a[sortField] || "").toString().toLowerCase();
+      const bv = (b[sortField] || "").toString().toLowerCase();
+      const cmp = av.localeCompare(bv, undefined, {
+        numeric: sortField === "code",
+      });
+      return sortDir === "asc" ? cmp : -cmp;
     });
-    return sortDir === "asc" ? cmp : -cmp;
-  });
-
+  }, [filtered, sortField, sortDir]);
 
   const totalPages = Math.max(1, Math.ceil(sorted.length / pageSize));
   const paginated = sorted.slice(
     (currentPage - 1) * pageSize,
-    currentPage * pageSize
-    );
-    
+    currentPage * pageSize,
+  );
+
   const handleSort = (field) => {
     if (sortField === field) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
     else {
@@ -229,12 +325,17 @@ export default function ChartOfAccounts() {
     );
   };
 
-  // ── Selection ──────────────────────────────────────────────────────────────
-const allChecked = paginated.length > 0 && paginated.every((a) => selected.has(a.id));
-const toggleAll = () =>
-  allChecked
-    ? setSelected((p) => { const n = new Set(p); paginated.forEach((a) => n.delete(a.id)); return n; })
-    : setSelected((p) => new Set([...p, ...paginated.map((a) => a.id)]));
+  // ── Selection ────────────────────────────────────────────────────────────
+  const allChecked =
+    paginated.length > 0 && paginated.every((a) => selected.has(a.id));
+  const toggleAll = () =>
+    allChecked
+      ? setSelected((p) => {
+          const n = new Set(p);
+          paginated.forEach((a) => n.delete(a.id));
+          return n;
+        })
+      : setSelected((p) => new Set([...p, ...paginated.map((a) => a.id)]));
   const toggleOne = (id) =>
     setSelected((p) => {
       const n = new Set(p);
@@ -242,134 +343,241 @@ const toggleAll = () =>
       return n;
     });
 
-  // ── Flash ──────────────────────────────────────────────────────────────────
-  const flash = (msg, type = "success") => {
-    setMessage(msg);
-    setMessageType(type);
-    setTimeout(() => setMessage(""), 3500);
+  // ── GROUP CRUD ───────────────────────────────────────────────────────────
+  const openAddGroup = () => {
+    setEditingGroup(null);
+    setGroupForm({ label: "", is_active: true });
+    setShowGroupModal(true);
+  };
+  const openEditGroup = (g) => {
+    setEditingGroup(g);
+    setGroupForm({ label: g.label || "", is_active: g.is_active });
+    setShowGroupModal(true);
   };
 
-  // ── CRUD ───────────────────────────────────────────────────────────────────
-  const openAdd = () => {
-    setEditing(null);
-    setForm({ ...emptyForm, agency_id: agencies[0]?.id || "" });
-    setShowModal(true);
-  };
-  const openEdit = (a) => {
-    setEditing(a);
-    setForm({
-      code: a.code || "",
-      agency_id: a.agency_id || a.government_agencies?.id || "",
-      account_name: a.account_name || "",
-      is_active: a.is_active,
-    });
-    setShowModal(true);
-  };
-
-const handleSave = async () => {
-  if (!form.name.trim()) { flash('Agency name is required.', 'error'); return; }
-  setSaving(true);
-  const newName = form.name.trim();
-  const payload = {
-    name:        newName,
-    description: form.description.trim(),
-    is_active:   form.is_active,
-  };
-  const { error } = editing
-    ? await supabase.from('government_agencies').update(payload).eq('id', editing.id)
-    : await supabase.from('government_agencies').insert([payload]);
-
-  if (error) { flash(`Error: ${error.message}`, 'error'); setSaving(false); return; }
-
-  // Cascade: kung nag-edit at nagbago ang pangalan, i-update din ang lahat
-  // ng chart_of_accounts rows na gumagamit ng dating pangalan ng agency na ito,
-  // para hindi mawala ang koneksyon nila sa Billing form.
-  if (editing && editing.name !== newName) {
-    const { error: coaError } = await supabase
-      .from('chart_of_accounts')
-      .update({ agency: newName })
-      .eq('agency', editing.name);
-
-    if (coaError) {
-      flash(`Agency saved, pero may error sa pag-sync ng Chart of Accounts: ${coaError.message}`, 'error');
-      setShowModal(false);
-      fetchAgencies();
-      setSaving(false);
+  const handleSaveGroup = async () => {
+    if (!groupForm.label.trim()) {
+      flash("Group name is required.", "error");
       return;
     }
-  }
+    setSavingGroup(true);
+    const payload = {
+      label: groupForm.label.trim(),
+      is_active: groupForm.is_active,
+      sort_order: editingGroup ? editingGroup.sort_order : groups.length,
+    };
+    const { error } = editingGroup
+      ? await supabase
+          .from("fee_groups")
+          .update(payload)
+          .eq("id", editingGroup.id)
+      : await supabase.from("fee_groups").insert([payload]);
 
-  flash(editing ? '✓ Agency updated (kasama ang naka-link na Chart of Accounts).' : '✓ Agency added.');
+    if (error) {
+      flash(`Error: ${error.message}`, "error");
+    } else {
+      flash(editingGroup ? "✓ Group updated." : "✓ Group added.");
+      setShowGroupModal(false);
+      fetchGroups();
+    }
+    setSavingGroup(false);
+  };
+
+  const handleDeleteGroup = async (g) => {
+    const { error } = await supabase.from("fee_groups").delete().eq("id", g.id);
+    if (error) {
+      flash("Cannot delete: agencies still reference this group.", "error");
+    } else {
+      flash("✓ Group deleted.");
+      if (activeGroupId === g.id) setActiveGroupId(null);
+      fetchGroups();
+    }
+    setDeleteConfirmGroup(null);
+  };
+
+  // ── AGENCY CRUD ──────────────────────────────────────────────────────────
+  const openAddAgency = () => {
+    setEditingAgency(null);
+    setAgencyForm({ name: "", description: "", is_active: true });
+    setShowAgencyModal(true);
+  };
+  const openEditAgency = (a) => {
+    setEditingAgency(a);
+    setAgencyForm({
+      name: a.name || "",
+      description: a.description || "",
+      is_active: a.is_active,
+    });
+    setShowAgencyModal(true);
+  };
+
+  const handleSaveAgency = async () => {
+    if (!agencyForm.name.trim()) {
+      flash("Agency name is required.", "error");
+      return;
+    }
+    if (!activeGroupId) {
+      flash("Pick a group first.", "error");
+      return;
+    }
+    setSavingAgency(true);
+    const payload = {
+      group_id: activeGroupId,
+      name: agencyForm.name.trim(),
+      description: agencyForm.description.trim() || null,
+      is_active: agencyForm.is_active,
+      sort_order: editingAgency ? editingAgency.sort_order : agencies.length,
+    };
+    const { error } = editingAgency
+      ? await supabase
+          .from("government_agencies")
+          .update(payload)
+          .eq("id", editingAgency.id)
+      : await supabase.from("government_agencies").insert([payload]);
+
+    if (error) {
+      flash(`Error: ${error.message}`, "error");
+    } else {
+      flash(editingAgency ? "✓ Agency updated." : "✓ Agency added.");
+      setShowAgencyModal(false);
+      fetchAgencies();
+    }
+    setSavingAgency(false);
+  };
+
+  const handleDeleteAgency = async (a) => {
+    const { error } = await supabase
+      .from("government_agencies")
+      .delete()
+      .eq("id", a.id);
+    if (error) {
+      flash("Cannot delete: accounts still reference this agency.", "error");
+    } else {
+      flash("✓ Agency deleted.");
+      if (activeAgencyId === a.id) setActiveAgencyId(null);
+      fetchAgencies();
+    }
+    setDeleteConfirmAgency(null);
+  };
+
+  // ── ACCOUNT CRUD ─────────────────────────────────────────────────────────
+  const openAdd = () => {
+    setEditing(null);
+    setForm(emptyForm);
+    setShowModal(true);
+  };
+const openEdit = (a) => {
+  setEditing(a);
+  setForm({
+    code: a.code || "",
+    account_name: a.account_name || "",
+    is_active: a.is_active,
+    billing_mode: a.billing_mode || "flat",
+    tax_setup_id: a.tax_setup_id || "",
+    contribution_key: a.contribution_key || "",   // ← bago
+  });
+  setShowModal(true);
+};
+
+const handleSave = async () => {
+  if (!form.account_name.trim()) {
+    flash("Account name is required.", "error");
+    return;
+  }
+  if (!activeAgencyId) {
+    flash("Pick a group and agency first.", "error");
+    return;
+  }
+  if (form.billing_mode === "contribution" && !form.contribution_key) {
+    flash("Pick a contribution type to link.", "error");
+    return;
+  }
+  setSaving(true);
+  const payload = {
+    code: form.code.trim() || null,
+    agency_id: activeAgencyId,
+    agency: activeAgency?.name || "",
+    account_name: form.account_name.trim(),
+    is_active: form.is_active,
+    billing_mode: form.billing_mode || "flat",
+    tax_setup_id: form.tax_setup_id || null,
+    contribution_key:
+      form.billing_mode === "contribution"
+        ? form.contribution_key || null
+        : null,
+  };
+  const { error } = editing
+    ? await supabase
+        .from("chart_of_accounts")
+        .update(payload)
+        .eq("id", editing.id)
+    : await supabase.from("chart_of_accounts").insert([payload]);
+
+  if (error) {
+    flash(`Error: ${error.message}`, "error");
+    setSaving(false);
+    return;
+  }
+  flash(editing ? "✓ Account updated." : "✓ Account added.");
   setShowModal(false);
-  fetchAgencies();
+  fetchAccounts();
   setSaving(false);
 };
 
   const handleDelete = async (id) => {
-    await supabase.from("chart_of_accounts").delete().eq("id", id);
+    const { error } = await supabase
+      .from("chart_of_accounts")
+      .delete()
+      .eq("id", id);
+    if (error) {
+      flash(`Cannot delete: ${error.message}`, "error");
+    } else {
+      setSelected((p) => {
+        const n = new Set(p);
+        n.delete(id);
+        return n;
+      });
+      fetchAccounts();
+      flash("✓ Account deleted.");
+    }
     setDeleteConfirm(null);
-    setSelected((p) => {
-      const n = new Set(p);
-      n.delete(id);
-      return n;
-    });
-    fetchAccounts();
-    flash("Account deleted.");
   };
 
   const handleBulkDelete = async () => {
     if (!window.confirm(`Delete ${selected.size} selected account(s)?`)) return;
-    await supabase
+    const { error } = await supabase
       .from("chart_of_accounts")
       .delete()
       .in("id", [...selected]);
+    if (error) {
+      flash(`Cannot delete: ${error.message}`, "error");
+      return;
+    }
     const count = selected.size;
     setSelected(new Set());
     fetchAccounts();
     flash(`${count} account(s) deleted.`);
   };
 
+  // ── Print / PDF (current agency's accounts only) ────────────────────────
   const buildPrintHTML = () => {
-    const grouped = {};
-    [...accounts]
+    const rows = [...accounts]
       .filter((a) => a.is_active)
-      .sort((a, b) => {
-        const an = a.government_agencies?.name || "";
-        const bn = b.government_agencies?.name || "";
-        return (
-          an.localeCompare(bn) ||
-          (a.code || "").localeCompare(b.code || "", undefined, {
-            numeric: true,
-          })
-        );
-      })
-      .forEach((a) => {
-        const ag = a.government_agencies?.name || "Uncategorized";
-        if (!grouped[ag]) grouped[ag] = [];
-        grouped[ag].push(a);
-      });
-
-    const agencyBlocks = Object.entries(grouped)
-      .map(([agency, items]) =>
-        items
-          .map(
-            (a) => `
+      .sort((a, b) =>
+        (a.code || "").localeCompare(b.code || "", undefined, {
+          numeric: true,
+        }),
+      )
+      .map(
+        (a) => `
     <tr>
       <td class="code">${a.code || "—"}</td>
-      <td class="agency">${a.government_agencies?.name || "—"}</td>
       <td class="name">${a.account_name}</td>
-    </tr>
-  `,
-          )
-          .join(""),
+    </tr>`,
       )
       .join("");
 
-    const now = new Date().toLocaleDateString("en-PH", {
-      year: "numeric",
-      month: "long",
-      day: "numeric",
-    });
+    const now = fmtDate();
     const generated = new Date().toLocaleString("en-PH", {
       year: "numeric",
       month: "short",
@@ -378,6 +586,7 @@ const handleSave = async () => {
       minute: "2-digit",
     });
     const totalActive = accounts.filter((a) => a.is_active).length;
+    const scopeLabel = `${activeGroup?.label || "—"} → ${activeAgency?.name || "—"}`;
 
     return `<!DOCTYPE html>
 <html>
@@ -387,22 +596,20 @@ const handleSave = async () => {
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { font-family: Arial, sans-serif; font-size: 10pt; color: #111; background: #fff; }
-.page { max-width: 100%; margin: 0; padding: 32px 32px 48px; }
+    .page { max-width: 100%; margin: 0; padding: 32px 32px 48px; }
     .letterhead { display: flex; align-items: flex-start; justify-content: space-between; padding-bottom: 18px; border-bottom: 3px solid #111; margin-bottom: 24px; }
     .lh-left .company { font-size: 13pt; font-weight: 700; color: #111; letter-spacing: -0.3pt; }
     .lh-left .tagline { font-size: 8pt; color: #6b7280; margin-top: 2px; }
     .lh-right { text-align: right; font-size: 8pt; color: #6b7280; line-height: 1.6; }
-    .doc-title { margin-bottom: 20px; }
     .doc-title h1 { font-size: 18pt; font-weight: 700; color: #111; letter-spacing: -0.5pt; }
     .doc-title .as-at { font-size: 9pt; color: #6b7280; margin-top: 3px; }
-table { width: 100%; border-collapse: collapse; font-size: 9pt; table-layout: fixed; }
+    table { width: 100%; border-collapse: collapse; font-size: 9pt; table-layout: fixed; }
     thead tr { background: #f3f4f6; border-top: 1px solid #d1d5db; border-bottom: 1px solid #d1d5db; }
     thead th { text-align: left; padding: 7px 10px; font-size: 7.5pt; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: #6b7280; }
-    tbody tr:nth-child(even):not(.agency-header) { background: #f9fafb; }
+    tbody tr:nth-child(even) { background: #f9fafb; }
     tbody td { padding: 5px 10px; border-bottom: 1px solid #f3f4f6; }
-td.code { font-family: 'Courier New', monospace; font-size: 8.5pt; color: #6b7280; }
-td.agency { color: #6b7280; font-size: 8.5pt; white-space: nowrap; }
-td.name { color: #111; word-wrap: break-word; }
+    td.code { font-family: 'Courier New', monospace; font-size: 8.5pt; color: #6b7280; width: 80px; }
+    td.name { color: #111; word-wrap: break-word; }
     .footer { margin-top: 32px; padding-top: 12px; border-top: 1px solid #e5e7eb; display: flex; justify-content: space-between; font-size: 7.5pt; color: #9ca3af; }
     .sig-line { display: inline-block; width: 180px; border-top: 1px solid #9ca3af; margin-top: 28px; font-size: 7pt; color: #6b7280; text-align: center; }
     @media print {
@@ -420,7 +627,7 @@ td.name { color: #111; word-wrap: break-word; }
         <div class="tagline">Business Management &amp; Accounting Services</div>
       </div>
       <div class="lh-right">
-        <div>Chart of Accounts</div>
+        <div>Chart of Accounts — ${scopeLabel}</div>
         <div>As at ${now}</div>
         <div>Generated: ${generated}</div>
       </div>
@@ -429,13 +636,12 @@ td.name { color: #111; word-wrap: break-word; }
     <table>
       <thead>
         <tr>
-      <th style="width:60px">Code</th>
-      <th style="width:180px">Government Agency</th>
-      <th>Account Name</th>
+          <th style="width:80px">Code</th>
+          <th>Account Name</th>
         </tr>
       </thead>
       <tbody>
-        ${agencyBlocks}
+        ${rows}
       </tbody>
     </table>
     <div class="footer">
@@ -462,21 +668,6 @@ td.name { color: #111; word-wrap: break-word; }
     }, 400);
   };
 
-  // Separate function para sa export
-  const buildExportHTML = () => {
-    const base = buildPrintHTML();
-    // Inject auto-print script na configured for PDF save
-    return base.replace(
-      "</body>",
-      `<script>
-      window.onload = function() {
-        window.print();
-        window.onafterprint = function() { window.close(); };
-      };
-    </script></body>`,
-    );
-  };
-
   const handleExportPdf = async () => {
     const iframe = document.createElement("iframe");
     iframe.style.cssText =
@@ -487,12 +678,10 @@ td.name { color: #111; word-wrap: break-word; }
     iframe.contentDocument.write(buildPrintHTML());
     iframe.contentDocument.close();
 
-    // Wait for render, then adjust height to actual content
     await new Promise((r) => setTimeout(r, 600));
     const actualHeight = iframe.contentDocument.body.scrollHeight;
     iframe.style.height = actualHeight + "px";
 
-    // Extra wait after resize
     await new Promise((r) => setTimeout(r, 200));
 
     try {
@@ -531,20 +720,28 @@ td.name { color: #111; word-wrap: break-word; }
       }
 
       const date = new Date().toISOString().slice(0, 10);
-      pdf.save(`chart_of_accounts_${date}.pdf`);
+      const safeAgency = (activeAgency?.name || "accounts").replace(
+        /[^a-z0-9]+/gi,
+        "_",
+      );
+      pdf.save(`chart_of_accounts_${safeAgency}_${date}.pdf`);
     } finally {
       document.body.removeChild(iframe);
     }
   };
 
-  // ── Export CSV ─────────────────────────────────────────────────────────────
-  const handleExportCSV = () => exportCSV(accounts);
+  // ── Export CSV (current agency's accounts) ───────────────────────────────
+  const handleExportCSV = () => exportCSV(accounts, activeAgency?.name);
 
-  // ── Import CSV ─────────────────────────────────────────────────────────────
+  // ── Import CSV (imports into the current agency) ─────────────────────────
   const handleImportFile = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
     e.target.value = "";
+    if (!activeAgencyId) {
+      flash("Pick a group and agency first.", "error");
+      return;
+    }
     setImporting(true);
     try {
       const text = await file.text();
@@ -561,24 +758,16 @@ td.name { color: #111; word-wrap: break-word; }
       const headers = parseRow(lines[0]).map((h) => h.toLowerCase());
       const codeIdx = headers.indexOf("code");
       const nameIdx = headers.indexOf("account name");
-      const agencyIdx = headers.indexOf("government agency");
       if (nameIdx === -1) {
         flash('CSV must have an "Account Name" column.', "error");
         setImporting(false);
         return;
       }
-      const { data: agList } = await supabase
-        .from("government_agencies")
-        .select("id, name");
-      const agencyMap = {};
-      (agList || []).forEach((a) => {
-        agencyMap[a.name.toLowerCase()] = a.id;
-      });
       const toInsert = [];
       const errors = [];
       lines.slice(1).forEach((line, i) => {
         const row = parseRow(line);
-        const name = nameIdx !== -1 ? row[nameIdx] : "";
+        const name = row[nameIdx];
         if (!name) {
           errors.push(`Row ${i + 2}: missing account name`);
           return;
@@ -586,11 +775,8 @@ td.name { color: #111; word-wrap: break-word; }
         toInsert.push({
           code: codeIdx !== -1 ? row[codeIdx] || null : null,
           account_name: name,
-          agency_id:
-            agencyIdx !== -1
-              ? agencyMap[(row[agencyIdx] || "").toLowerCase()] || null
-              : null,
-          agency: agencyIdx !== -1 ? row[agencyIdx] || "" : "",
+          agency_id: activeAgencyId,
+          agency: activeAgency?.name || "",
           is_active: true,
         });
       });
@@ -618,67 +804,136 @@ td.name { color: #111; word-wrap: break-word; }
     setImporting(false);
   };
 
-  const tabs = ["All", ...agencies.map((a) => a.name)];
-
-  // ── Render ─────────────────────────────────────────────────────────────────
+  // ── Render ─────────────────────────────────────────────────────────────
   return (
     <div className="min-h-screen px-4 py-4 bg-gray-50">
       <div className="max-w-6xl mx-auto">
         {/* TOP BAR */}
-        <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center justify-between mb-5">
           <div>
             <h1 className="text-lg font-semibold tracking-tight text-gray-900">
               Chart of Accounts
             </h1>
             <p className="text-xs text-gray-400 mt-0.5">
-              As at {fmtDate()} · {accounts.length} accounts
+              As at {fmtDate()} · Group → Agency → Accounts
             </p>
           </div>
+        </div>
 
-          <div className="flex items-center gap-2">
-            {/* PDF Dropdown */}
-            <PdfDropdown onPrint={handlePrint} onExportPdf={handleExportPdf} />
+        {/* LEVEL 1 TABS: GROUPS */}
+        <div className="flex flex-wrap items-center gap-2 mb-3">
+          {loadingGroups ? (
+            <span className="text-xs text-gray-400">Loading groups…</span>
+          ) : (
+            groups.map((g) => (
+              <div key={g.id} className="relative group/tab">
+                <button
+                  onClick={() => setActiveGroupId(g.id)}
+                  className={`px-4 py-2 text-sm font-bold rounded-lg transition flex items-center gap-2
+                    ${
+                      activeGroupId === g.id
+                        ? "bg-gray-900 text-white shadow-sm"
+                        : "bg-white text-gray-500 border border-gray-200 hover:border-gray-400"
+                    }`}
+                >
+                  <FaLayerGroup size={11} /> {g.label}
+                  {!g.is_active && (
+                    <span className="text-[9px] font-bold uppercase opacity-70">
+                      (inactive)
+                    </span>
+                  )}
+                </button>
+                <span className="absolute items-center hidden gap-1 -top-2 -right-2 group-hover/tab:flex">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      openEditGroup(g);
+                    }}
+                    className="p-1 text-gray-600 bg-white border border-gray-200 rounded-full shadow"
+                    title="Edit group"
+                  >
+                    <FaEdit size={8} />
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setDeleteConfirmGroup(g);
+                    }}
+                    className="p-1 text-red-400 bg-white border border-gray-200 rounded-full shadow"
+                    title="Delete group"
+                  >
+                    <FaTrash size={8} />
+                  </button>
+                </span>
+              </div>
+            ))
+          )}
+          <button
+            onClick={openAddGroup}
+            className="flex items-center gap-1.5 px-3 py-2 text-xs font-bold text-gray-600 transition bg-white border border-gray-300 border-dashed rounded-lg hover:bg-gray-100"
+          >
+            <FaPlus size={9} /> Add Group
+          </button>
+        </div>
 
-            {/* Export CSV */}
-            <button
-              onClick={handleExportCSV}
-              className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 hover:border-gray-300 transition"
-            >
-              <FaFileExport size={10} className="text-gray-400" /> Export CSV
-            </button>
-
-            {/* Import CSV */}
-            <button
-              onClick={() => importRef.current?.click()}
-              disabled={importing}
-              className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 hover:border-gray-300 transition disabled:opacity-50"
-            >
-              {importing ? (
-                <span className="w-3 h-3 border border-gray-400 rounded-full border-t-transparent animate-spin" />
-              ) : (
-                <FaFileImport size={10} className="text-gray-400" />
-              )}
-              Import CSV
-            </button>
-            <input
-              ref={importRef}
-              type="file"
-              accept=".csv"
-              className="hidden"
-              onChange={handleImportFile}
-            />
-
-            {/* Divider */}
-            <div className="w-px h-5 mx-1 bg-gray-200" />
-
-            {/* Add Account */}
-            <button
-              onClick={openAdd}
-              className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-medium text-white bg-gray-900 rounded-lg hover:bg-gray-700 transition"
-            >
-              <FaPlus size={9} /> Add Account
-            </button>
-          </div>
+        {/* LEVEL 2 TABS: AGENCIES */}
+        <div className="flex flex-wrap items-center gap-1.5 mb-5 p-1.5 bg-white border border-gray-200 rounded-xl">
+          {loadingAgencies ? (
+            <span className="px-2 text-xs text-gray-400">
+              Loading agencies…
+            </span>
+          ) : agencies.length === 0 ? (
+            <span className="px-2 text-xs text-gray-400">
+              No agencies under {activeGroup?.label || "this group"} yet — add
+              one.
+            </span>
+          ) : (
+            agencies.map((a) => (
+              <div key={a.id} className="relative group/tab">
+                <button
+                  onClick={() => setActiveAgencyId(a.id)}
+                  className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition
+                    ${activeAgencyId === a.id ? "bg-gray-100 text-gray-900" : "text-gray-500 hover:bg-gray-50"}`}
+                >
+                  {a.name}
+                  {!a.is_active && (
+                    <span className="ml-1 text-[9px] font-bold uppercase opacity-70">
+                      (inactive)
+                    </span>
+                  )}
+                </button>
+                <span className="absolute items-center hidden gap-1 -top-2 -right-2 group-hover/tab:flex">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      openEditAgency(a);
+                    }}
+                    className="p-1 text-gray-600 bg-white border border-gray-200 rounded-full shadow"
+                    title="Edit agency"
+                  >
+                    <FaEdit size={7} />
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setDeleteConfirmAgency(a);
+                    }}
+                    className="p-1 text-red-400 bg-white border border-gray-200 rounded-full shadow"
+                    title="Delete agency"
+                  >
+                    <FaTrash size={7} />
+                  </button>
+                </span>
+              </div>
+            ))
+          )}
+          <button
+            onClick={openAddAgency}
+            disabled={!activeGroupId}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-gray-600 transition bg-white border border-gray-300 border-dashed rounded-lg hover:bg-gray-100 disabled:opacity-40"
+          >
+            <FaPlus size={8} /> Add Agency
+          </button>
         </div>
 
         {/* MESSAGE */}
@@ -706,87 +961,116 @@ td.name { color: #111; word-wrap: break-word; }
           </div>
         )}
 
-        {/* IMPORT HINT */}
-        <div className="mb-4 px-3 py-2 rounded-lg text-[11px] text-gray-400 flex items-center gap-2"></div>
-
-        {/* MAIN CARD */}
+        {/* MAIN CARD: LEVEL 3 — ACCOUNTS */}
         <div className="overflow-hidden bg-white border border-gray-200 rounded-xl">
-          {/* TABS */}
-          <div className="flex flex-wrap items-center px-1 border-b border-gray-100">
-            {tabs.map((tab) => (
+          {/* HEADER / TOOLBAR */}
+          <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 border-b border-gray-100">
+            <div>
+              <h2 className="flex items-center gap-2 text-sm font-semibold text-gray-800">
+                <FaBuilding size={12} className="text-gray-400" />
+                {activeGroup ? activeGroup.label : "—"}{" "}
+                {activeAgency ? `→ ${activeAgency.name}` : ""}
+              </h2>
+              <span className="text-xs text-gray-400">
+                {sorted.length} account{sorted.length !== 1 ? "s" : ""}
+              </span>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <PdfDropdown
+                onPrint={handlePrint}
+                onExportPdf={handleExportPdf}
+              />
               <button
-                key={tab}
-                onClick={() => {
-                  setActiveTab(tab);
-                  setSelected(new Set());
-                }}
-                className={`px-4 py-3 text-xs font-medium whitespace-nowrap transition border-b-2 -mb-px
-                  ${
-                    activeTab === tab
-                      ? "text-gray-900 border-gray-900"
-                      : "text-gray-400 border-transparent hover:text-gray-600 hover:border-gray-300"
-                  }`}
+                onClick={handleExportCSV}
+                disabled={!activeAgencyId}
+                className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 hover:border-gray-300 transition disabled:opacity-40"
               >
-                {tab === "All" ? "All Accounts" : tab}
+                <FaFileExport size={10} className="text-gray-400" /> Export CSV
               </button>
-            ))}
+              <button
+                onClick={() => importRef.current?.click()}
+                disabled={importing || !activeAgencyId}
+                className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 hover:border-gray-300 transition disabled:opacity-50"
+              >
+                {importing ? (
+                  <span className="w-3 h-3 border border-gray-400 rounded-full border-t-transparent animate-spin" />
+                ) : (
+                  <FaFileImport size={10} className="text-gray-400" />
+                )}
+                Import CSV
+              </button>
+              <input
+                ref={importRef}
+                type="file"
+                accept=".csv"
+                className="hidden"
+                onChange={handleImportFile}
+              />
+              <div className="w-px h-5 mx-1 bg-gray-200" />
+              <div className="relative w-56">
+                <FaSearch
+                  className="absolute text-gray-300 -translate-y-1/2 left-3 top-1/2"
+                  size={10}
+                />
+                <input
+                  type="text"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Search…"
+                  className="w-full py-1.5 pl-8 pr-7 text-xs border border-gray-200 rounded-lg focus:outline-none focus:border-gray-400 focus:ring-1 focus:ring-gray-100 bg-white"
+                />
+                {search && (
+                  <button
+                    onClick={() => setSearch("")}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-300 hover:text-gray-500"
+                  >
+                    <FaTimes size={9} />
+                  </button>
+                )}
+              </div>
+              <button
+                onClick={openAdd}
+                disabled={!activeAgencyId}
+                className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-medium text-white bg-gray-900 rounded-lg hover:bg-gray-700 transition disabled:opacity-40"
+              >
+                <FaPlus size={9} /> Add Account
+              </button>
+            </div>
           </div>
 
-          {/* SEARCH + BULK */}
-          <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-gray-50">
-            <div className="flex items-center gap-2 text-xs text-gray-400">
-              {selected.size > 0 ? (
-                <>
-                  <span className="font-medium text-gray-500">
-                    {selected.size} selected
-                  </span>
-                  <button
-                    onClick={handleBulkDelete}
-                    className="flex items-center gap-1 px-2.5 py-1 text-red-500 border border-red-100 rounded-lg hover:bg-red-50 transition"
-                  >
-                    <FaTrash size={9} /> Delete
-                  </button>
-                  <button
-                    onClick={() => setSelected(new Set())}
-                    className="px-2.5 py-1 text-gray-400 border border-gray-100 rounded-lg hover:bg-gray-50 transition"
-                  >
-                    Clear
-                  </button>
-                </>
-              ) : (
-                <span>
-                  {sorted.length !== accounts.length
-                    ? `${sorted.length} of ${accounts.length}`
-                    : `${accounts.length}`}{" "}
-                  accounts
-                </span>
-              )}
+          {/* BULK BAR */}
+          {selected.size > 0 && (
+            <div className="flex items-center gap-2 px-4 py-2 text-xs border-b border-gray-50 bg-gray-50/60">
+              <span className="font-medium text-gray-500">
+                {selected.size} selected
+              </span>
+              <button
+                onClick={handleBulkDelete}
+                className="flex items-center gap-1 px-2.5 py-1 text-red-500 border border-red-100 rounded-lg hover:bg-red-50 transition"
+              >
+                <FaTrash size={9} /> Delete
+              </button>
+              <button
+                onClick={() => setSelected(new Set())}
+                className="px-2.5 py-1 text-gray-400 border border-gray-100 rounded-lg hover:bg-gray-50 transition"
+              >
+                Clear
+              </button>
             </div>
-            <div className="relative w-56">
-              <FaSearch
-                className="absolute text-gray-300 -translate-y-1/2 left-3 top-1/2"
-                size={10}
-              />
-              <input
-                type="text"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search…"
-                className="w-full py-1.5 pl-8 pr-7 text-xs border border-gray-200 rounded-lg focus:outline-none focus:border-gray-400 focus:ring-1 focus:ring-gray-100 bg-white"
-              />
-              {search && (
-                <button
-                  onClick={() => setSearch("")}
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-300 hover:text-gray-500"
-                >
-                  <FaTimes size={9} />
-                </button>
-              )}
-            </div>
-          </div>
+          )}
 
           {/* TABLE */}
-          {loading ? (
+          {!activeGroupId || !activeAgencyId ? (
+            <div className="py-24 text-center">
+              <p className="text-sm font-medium text-gray-300">
+                Pick a group and an agency above
+              </p>
+              <p className="mt-1 text-xs text-gray-200">
+                Add one if the lists are empty
+              </p>
+            </div>
+          ) : loading ? (
             <div className="flex items-center justify-center py-24">
               <div className="w-5 h-5 border border-gray-300 rounded-full border-t-gray-700 animate-spin" />
             </div>
@@ -814,16 +1098,7 @@ td.name { color: #111; word-wrap: break-word; }
                     </th>
                     {[
                       { label: "Code", field: "code", w: "w-32" },
-                      {
-                        label: "Government Agency",
-                        field: "agency",
-                        w: "w-56",
-                      },
-                      {
-                        label: "Account Name",
-                        field: "account_name",
-                        w: "w-72",
-                      },
+                      { label: "Account Name", field: "account_name", w: "" },
                     ].map((col) => (
                       <th
                         key={col.field}
@@ -836,19 +1111,25 @@ td.name { color: #111; word-wrap: break-word; }
                         </span>
                       </th>
                     ))}
-                    <th className="w-24 px-32 py-3 text-right text-[10px] font-semibold uppercase tracking-widest text-gray-400">
+                    <th className="w-24 px-4 py-3 text-left text-[10px] font-semibold uppercase tracking-widest text-gray-400">
+                      Status
+                    </th>
+                    <th className="w-28 px-4 py-3 text-left text-[10px] font-semibold uppercase tracking-widest text-gray-400">
+                      Billing Type
+                    </th>
+                    <th className="w-24 px-4 py-3 text-right text-[10px] font-semibold uppercase tracking-widest text-gray-400">
                       Actions
                     </th>
                   </tr>
                 </thead>
                 <tbody>
-                  {paginated  .map((acct, idx) => (
+                  {paginated.map((acct) => (
                     <tr
                       key={acct.id}
                       onMouseEnter={() => setHoveredId(acct.id)}
                       onMouseLeave={() => setHoveredId(null)}
                       className={`border-b border-gray-50 transition-colors
-    ${selected.has(acct.id) ? "bg-gray-50" : hoveredId === acct.id ? "bg-gray-50/60" : ""}`}
+                        ${selected.has(acct.id) ? "bg-gray-50" : hoveredId === acct.id ? "bg-gray-50/60" : ""}`}
                     >
                       <td className="px-4 py-3">
                         <input
@@ -863,15 +1144,41 @@ td.name { color: #111; word-wrap: break-word; }
                           {acct.code || "—"}
                         </span>
                       </td>
-                      <td className="px-4 py-3 text-xs text-gray-400 whitespace-nowrap">
-                        {acct.government_agencies?.name || "—"}
-                      </td>
                       <td className="px-4 py-3 text-sm font-medium text-gray-800">
                         {acct.account_name}
                       </td>
-                      <td className="w-24 px-4 py-3 text-right">
+                      <td className="px-4 py-3">
+                        <span
+                          className={`text-[10px] font-bold px-2 py-1 rounded-full ${
+                            acct.is_active
+                              ? "bg-green-100 text-green-700"
+                              : "bg-gray-100 text-gray-400"
+                          }`}
+                        >
+                          {acct.is_active ? "Active" : "Inactive"}
+                        </span>
+                      </td>
+                  <td className="px-4 py-3">
+  <span
+    className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+      acct.billing_mode === "schedule"
+        ? "bg-blue-100 text-blue-700"
+        : acct.billing_mode === "contribution"
+        ? "bg-purple-100 text-purple-700"
+        : "bg-gray-100 text-gray-500"
+    }`}
+  >
+    {acct.billing_mode === "schedule"
+      ? "Schedule"
+      : acct.billing_mode === "contribution"
+      ? "Contribution"
+      : "Flat"}
+  </span>
+</td>
+
+                      <td className="px-4 py-3 text-right">
                         <div
-                          className={`flex items-center justify-end px-28 gap-0.5 transition-opacity
+                          className={`flex items-center justify-end gap-0.5 transition-opacity
                           ${hoveredId === acct.id ? "opacity-100" : "opacity-0"}`}
                         >
                           <button
@@ -897,58 +1204,292 @@ td.name { color: #111; word-wrap: break-word; }
             </div>
           )}
 
- {sorted.length > 0 && (
-  <div className="flex items-center justify-between px-4 py-2.5 border-t border-gray-50 text-[11px] text-gray-400">
-    <div className="flex items-center gap-3">
-      <span>
-        Showing {(currentPage - 1) * pageSize + 1}–
-        {Math.min(currentPage * pageSize, sorted.length)} of {sorted.length}
-        {activeTab !== "All" ? ` · ${activeTab}` : ""}
-      </span>
-      <select
-        value={pageSize}
-        onChange={(e) => setPageSize(Number(e.target.value))}
-        className="px-2 py-1 text-[11px] border border-gray-200 rounded-md bg-white cursor-pointer"
-      >
-        {[10, 25, 50, 100].map((n) => (
-          <option key={n} value={n}>{n} / page</option>
-        ))}
-      </select>
-    </div>
+          {/* PAGINATION */}
+          {sorted.length > 0 && (
+            <div className="flex items-center justify-between px-4 py-2.5 border-t border-gray-50 text-[11px] text-gray-400">
+              <div className="flex items-center gap-3">
+                <span>
+                  Showing {(currentPage - 1) * pageSize + 1}–
+                  {Math.min(currentPage * pageSize, sorted.length)} of{" "}
+                  {sorted.length}
+                </span>
+                <select
+                  value={pageSize}
+                  onChange={(e) => setPageSize(Number(e.target.value))}
+                  className="px-2 py-1 text-[11px] border border-gray-200 rounded-md bg-white cursor-pointer"
+                >
+                  {[10, 25, 50, 100].map((n) => (
+                    <option key={n} value={n}>
+                      {n} / page
+                    </option>
+                  ))}
+                </select>
+              </div>
 
-    <div className="flex items-center gap-2">
-      {selected.size > 0 && <span>{selected.size} selected</span>}
-      <button
-        onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-        disabled={currentPage === 1}
-        className="px-2.5 py-1 border border-gray-200 rounded-md hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed transition"
-      >
-        Prev
-      </button>
-      <span className="px-2">
-        Page {currentPage} of {totalPages}
-      </span>
-      <button
-        onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-        disabled={currentPage === totalPages}
-        className="px-2.5 py-1 border border-gray-200 rounded-md hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed transition"
-      >
-        Next
-      </button>
-    </div>
-  </div>
-)}
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                  disabled={currentPage === 1}
+                  className="px-2.5 py-1 border border-gray-200 rounded-md hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed transition"
+                >
+                  Prev
+                </button>
+                <span className="px-2">
+                  Page {currentPage} of {totalPages}
+                </span>
+                <button
+                  onClick={() =>
+                    setCurrentPage((p) => Math.min(totalPages, p + 1))
+                  }
+                  disabled={currentPage === totalPages}
+                  className="px-2.5 py-1 border border-gray-200 rounded-md hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed transition"
+                >
+                  Next
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
-      {/* ADD / EDIT MODAL */}
+      {/* GROUP ADD/EDIT MODAL */}
+      {showGroupModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+          <div className="w-full max-w-sm overflow-hidden bg-white shadow-2xl rounded-2xl">
+            <div className="flex items-center justify-between px-6 py-5 bg-gray-900">
+              <h2 className="text-base font-bold text-white">
+                {editingGroup ? "Edit Group" : "Add New Group"}
+              </h2>
+              <button
+                onClick={() => setShowGroupModal(false)}
+                className="text-white/60 hover:text-white"
+              >
+                <FaTimes />
+              </button>
+            </div>
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-wide text-gray-400 mb-1.5">
+                  Group Name <span className="text-red-400">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={groupForm.label}
+                  onChange={(e) =>
+                    setGroupForm((p) => ({ ...p, label: e.target.value }))
+                  }
+                  placeholder="e.g. Fees"
+                  className={inputCls}
+                />
+              </div>
+              <div className="flex items-center gap-3 pt-2 border-t border-gray-100">
+                <button
+                  onClick={() =>
+                    setGroupForm((p) => ({ ...p, is_active: !p.is_active }))
+                  }
+                  className={`relative w-10 h-5 rounded-full transition-colors ${groupForm.is_active ? "bg-gray-800" : "bg-gray-200"}`}
+                >
+                  <span
+                    className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${groupForm.is_active ? "translate-x-5" : ""}`}
+                  />
+                </button>
+                <span className="text-sm text-gray-600">
+                  {groupForm.is_active ? "Active" : "Inactive"}
+                </span>
+              </div>
+            </div>
+            <div className="flex gap-3 px-6 py-4 border-t border-gray-100">
+              <button
+                onClick={() => setShowGroupModal(false)}
+                className="flex-1 py-2.5 text-sm font-semibold rounded-xl bg-gray-100 hover:bg-gray-200 text-gray-700 transition"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSaveGroup}
+                disabled={savingGroup}
+                className="flex-1 py-2.5 text-sm font-semibold rounded-xl bg-gray-900 hover:bg-gray-700 text-white transition disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {savingGroup ? (
+                  <span className="w-4 h-4 border-2 border-white rounded-full border-t-transparent animate-spin" />
+                ) : (
+                  <FaCheck size={12} />
+                )}
+                {editingGroup ? "Save Changes" : "Save"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* GROUP DELETE CONFIRM */}
+      {deleteConfirmGroup && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+          <div className="w-full max-w-sm p-6 bg-white shadow-2xl rounded-2xl">
+            <h3 className="mb-1 text-base font-bold text-gray-800">
+              Delete Group?
+            </h3>
+            <p className="mb-5 text-sm text-gray-500">
+              "
+              <span className="font-semibold text-gray-700">
+                {deleteConfirmGroup.label}
+              </span>
+              " will be removed. Agencies still linked to it must be deleted
+              first.
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setDeleteConfirmGroup(null)}
+                className="flex-1 py-2.5 text-sm font-semibold rounded-xl bg-gray-100 hover:bg-gray-200 text-gray-700 transition"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => handleDeleteGroup(deleteConfirmGroup)}
+                className="flex-1 py-2.5 text-sm font-semibold rounded-xl bg-red-600 hover:bg-red-700 text-white transition"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* AGENCY ADD/EDIT MODAL */}
+      {showAgencyModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+          <div className="w-full max-w-sm overflow-hidden bg-white shadow-2xl rounded-2xl">
+            <div className="flex items-center justify-between px-6 py-5 bg-gray-900">
+              <h2 className="flex items-center gap-2 text-base font-bold text-white">
+                <FaBuilding size={14} />{" "}
+                {editingAgency ? "Edit Agency" : "Add New Agency"}
+              </h2>
+              <button
+                onClick={() => setShowAgencyModal(false)}
+                className="text-white/60 hover:text-white"
+              >
+                <FaTimes />
+              </button>
+            </div>
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-wide text-gray-400 mb-1.5">
+                  Agency Name <span className="text-red-400">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={agencyForm.name}
+                  onChange={(e) =>
+                    setAgencyForm((p) => ({ ...p, name: e.target.value }))
+                  }
+                  placeholder="e.g. SEC"
+                  className={inputCls}
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-wide text-gray-400 mb-1.5">
+                  Description{" "}
+                  <span className="font-normal text-gray-300">(optional)</span>
+                </label>
+                <input
+                  type="text"
+                  value={agencyForm.description}
+                  onChange={(e) =>
+                    setAgencyForm((p) => ({
+                      ...p,
+                      description: e.target.value,
+                    }))
+                  }
+                  placeholder="e.g. Securities and Exchange Commission"
+                  className={inputCls}
+                />
+              </div>
+              <div className="flex items-center gap-3 pt-2 border-t border-gray-100">
+                <button
+                  onClick={() =>
+                    setAgencyForm((p) => ({ ...p, is_active: !p.is_active }))
+                  }
+                  className={`relative w-10 h-5 rounded-full transition-colors ${agencyForm.is_active ? "bg-gray-800" : "bg-gray-200"}`}
+                >
+                  <span
+                    className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${agencyForm.is_active ? "translate-x-5" : ""}`}
+                  />
+                </button>
+                <span className="text-sm text-gray-600">
+                  {agencyForm.is_active ? "Active" : "Inactive"}
+                </span>
+              </div>
+            </div>
+            <div className="flex gap-3 px-6 py-4 border-t border-gray-100">
+              <button
+                onClick={() => setShowAgencyModal(false)}
+                className="flex-1 py-2.5 text-sm font-semibold rounded-xl bg-gray-100 hover:bg-gray-200 text-gray-700 transition"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSaveAgency}
+                disabled={savingAgency}
+                className="flex-1 py-2.5 text-sm font-semibold rounded-xl bg-gray-900 hover:bg-gray-700 text-white transition disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {savingAgency ? (
+                  <span className="w-4 h-4 border-2 border-white rounded-full border-t-transparent animate-spin" />
+                ) : (
+                  <FaCheck size={12} />
+                )}
+                {editingAgency ? "Save Changes" : "Save"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* AGENCY DELETE CONFIRM */}
+      {deleteConfirmAgency && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+          <div className="w-full max-w-sm p-6 bg-white shadow-2xl rounded-2xl">
+            <h3 className="mb-1 text-base font-bold text-gray-800">
+              Delete Agency?
+            </h3>
+            <p className="mb-5 text-sm text-gray-500">
+              "
+              <span className="font-semibold text-gray-700">
+                {deleteConfirmAgency.name}
+              </span>
+              " will be removed. Accounts still linked to it must be deleted
+              first.
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setDeleteConfirmAgency(null)}
+                className="flex-1 py-2.5 text-sm font-semibold rounded-xl bg-gray-100 hover:bg-gray-200 text-gray-700 transition"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => handleDeleteAgency(deleteConfirmAgency)}
+                className="flex-1 py-2.5 text-sm font-semibold rounded-xl bg-red-600 hover:bg-red-700 text-white transition"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ACCOUNT ADD/EDIT MODAL */}
       {showModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/20 backdrop-blur-[2px]">
           <div className="w-full max-w-md overflow-hidden bg-white border border-gray-100 shadow-xl rounded-2xl">
             <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
-              <h2 className="text-sm font-semibold text-gray-800">
-                {editing ? "Edit account" : "Add account"}
-              </h2>
+              <div>
+                <h2 className="text-sm font-semibold text-gray-800">
+                  {editing ? "Edit account" : "Add account"}
+                </h2>
+                <p className="text-xs text-gray-400">
+                  {activeGroup?.label} → {activeAgency?.name}
+                </p>
+              </div>
               <button
                 onClick={() => setShowModal(false)}
                 className="text-gray-300 transition hover:text-gray-600"
@@ -977,28 +1518,6 @@ td.name { color: #111; word-wrap: break-word; }
               </div>
               <div>
                 <label className="block text-[11px] font-semibold uppercase tracking-wider text-gray-400 mb-1.5">
-                  Government Agency{" "}
-                  <span className="font-normal tracking-normal text-red-400 normal-case">
-                    *
-                  </span>
-                </label>
-                <select
-                  value={form.agency_id}
-                  onChange={(e) =>
-                    setForm((p) => ({ ...p, agency_id: e.target.value }))
-                  }
-                  className={selectCls}
-                >
-                  <option value="">Select agency</option>
-                  {agencies.map((a) => (
-                    <option key={a.id} value={a.id}>
-                      {a.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="block text-[11px] font-semibold uppercase tracking-wider text-gray-400 mb-1.5">
                   Account Name{" "}
                   <span className="font-normal tracking-normal text-red-400 normal-case">
                     *
@@ -1015,6 +1534,46 @@ td.name { color: #111; word-wrap: break-word; }
                   className={inputCls}
                 />
               </div>
+<div>
+  <label className="block text-[11px] font-semibold uppercase tracking-wider text-gray-400 mb-1.5">
+    Billing Type
+  </label>
+  <select
+    value={form.billing_mode || "flat"}
+    onChange={(e) => setForm((p) => ({ ...p, billing_mode: e.target.value }))}
+    className={selectCls}
+  >
+    <option value="flat">Flat Amount (single input)</option>
+    <option value="schedule">Schedule (Year / Period / VAT breakdown)</option>
+    <option value="contribution">Government Contribution (from Employee Management)</option>
+  </select>
+  <p className="text-[10px] text-gray-300 mt-1">
+    "Schedule" shows a Year/Period/Net-of-VAT/VAT/WTAX table in Batch Billing instead of a plain amount box.
+  </p>
+</div>
+              <div>
+                <label className="block text-[11px] font-semibold uppercase tracking-wider text-gray-400 mb-1.5">
+                  Link to Tax Type{" "}
+                  <span className="font-normal text-gray-300 normal-case">(optional)</span>
+                </label>
+                <select
+                  value={form.tax_setup_id || ""}
+                  onChange={(e) => setForm((p) => ({ ...p, tax_setup_id: e.target.value }))}
+                  className={selectCls}
+                >
+                  <option value="">— None —</option>
+                  {taxTypes.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.label} ({t.computation_type})
+                    </option>
+                  ))}
+                </select>
+                <p className="text-[10px] text-gray-300 mt-1">
+                  Pulls computation rules from Tax Setup instead of re-typing them here.
+                </p>
+              </div>
+              <div className="flex items-center gap-3 pt-1 border-t border-gray-50">
+</div>
               <div className="flex items-center gap-3 pt-1 border-t border-gray-50">
                 <button
                   onClick={() =>
@@ -1026,9 +1585,30 @@ td.name { color: #111; word-wrap: break-word; }
                     className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow-sm transition-transform ${form.is_active ? "translate-x-4" : ""}`}
                   />
                 </button>
-                <span className="text-xs text-gray-500">
-                  {form.is_active ? "Active" : "Inactive"}
-                </span>
+{form.billing_mode === "contribution" && (
+  <div>
+    <label className="block text-[11px] font-semibold uppercase tracking-wider text-gray-400 mb-1.5">
+      Link to Contribution Type{" "}
+      <span className="font-normal tracking-normal text-red-400 normal-case">*</span>
+    </label>
+    <select
+      value={form.contribution_key || ""}
+      onChange={(e) => setForm((p) => ({ ...p, contribution_key: e.target.value }))}
+      className={selectCls}
+    >
+      <option value="">— Select —</option>
+      <option value="sss_total">SSS Total</option>
+      <option value="phic_total">PHIC Total</option>
+      <option value="hdmf_total">HDMF Total</option>
+      <option value="sss_loan">SSS Loan</option>
+      <option value="pagibig_loan">Pag-IBIG Loan</option>
+    </select>
+    <p className="text-[10px] text-gray-300 mt-1">
+      Kukunin ang amount galing sa Employee Management (per-client total), hindi na manual typing sa Batch Billing.
+    </p>
+  </div>
+)}
+                  <span className="text-xs text-gray-500">{form.is_active ? "Active" : "Inactive"}</span>
               </div>
             </div>
             <div className="flex gap-2 px-6 py-4 border-t border-gray-50 bg-gray-50/50">
@@ -1055,7 +1635,7 @@ td.name { color: #111; word-wrap: break-word; }
         </div>
       )}
 
-      {/* DELETE CONFIRM */}
+      {/* ACCOUNT DELETE CONFIRM */}
       {deleteConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/20 backdrop-blur-[2px]">
           <div className="w-full max-w-sm p-6 bg-white border border-gray-100 shadow-xl rounded-2xl">

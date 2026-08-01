@@ -1,947 +1,1048 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { supabase } from "../../lib/supabaseClient";
 import {
-  FaPlus, FaTimes, FaSearch, FaEdit, FaTrashAlt, FaSync,FaCheck, FaExclamationTriangle,
-  FaCheckCircle, FaTimesCircle, FaUniversity, FaCalculator, FaEye,
-  FaChevronLeft, FaChevronRight, FaAngleDoubleLeft, FaAngleDoubleRight,
-  
-} from 'react-icons/fa';
-import { supabase } from '../../lib/supabaseClient';
+  FaTimes,
+  FaSync,
+  FaSave,
+  FaSlidersH,
+  FaMoneyCheckAlt,
+  FaCheckCircle,
+  FaExclamationTriangle,
+  FaPlus,
+  FaTrash,
+  FaLink,
+  FaInfoCircle,
+  FaChevronDown,
+  FaChevronUp,
+} from "react-icons/fa";
 
-// ─── CONSTANTS ─────────────────────────────────────────────────────────────────
+const GREEN = "#1a5c2e";
+const RED = "#c0392b";
+
+const inputCls =
+  "w-full px-3 py-2 text-sm border border-gray-200 rounded-md focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-100 bg-white transition";
+const labelCls = "block text-xs font-medium text-gray-500 mb-1";
+const readOnlyCls =
+  "px-3 py-2 text-sm text-right font-mono border border-gray-200 rounded-md bg-gray-50 text-gray-700";
+
 const MONTHS = [
-  'January','February','March','April','May','June',
-  'July','August','September','October','November','December'
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December",
 ];
 
-const TRANSACTION_TYPES = [
-  'Deposit', 'Withdrawal', 'Check Payment', 'Bank Charge',
-  'Interest Income', 'Fund Transfer', 'Client Payment',
-  'Government Remittance', 'Payroll', 'Utilities', 'Others'
-];
 
-const EMPTY_TXN = {
-  date: '', description: '', type: 'Deposit',
-  reference_no: '', amount: '', is_outstanding: false, notes: '',
-};
+function fmt(n) {
+  return Number(n || 0).toLocaleString("en-PH", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+}
+function today() {
+  return new Date().toISOString().split("T")[0];
+}
+function lastDayOfMonth(year, month) {
+  // month is 1-12
+  return new Date(year, month, 0).toISOString().split("T")[0];
+}
 
-// ─── HELPERS ──────────────────────────────────────────────────────────────────
-const fmtPeso = (n) =>
-  '₱' + Number(n || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+// ── Bank name → official_receipts.payment_method mapping ──
+// Free-text bank name field, so we match loosely (case-insensitive, substring).
+// Extend this if you add more payment methods in RecordPayment.jsx.
+function mapBankToPaymentMethod(bankName) {
+  const b = (bankName || "").toLowerCase();
+  if (b.includes("bdo") || b.includes("banco de oro")) return "bank_transfer_bdo";
+  if (b.includes("china")) return "bank_transfer_chinabank";
+  return null; // unrecognized bank name — no auto-sync, manual entry only
+}
 
-const fmtDate = (d) => {
-  if (!d) return '—';
-  return new Date(d).toLocaleDateString('en-PH', { year: 'numeric', month: 'short', day: 'numeric' });
-};
+// ── Transactions modal — manages bank_reconciliation_transactions rows ─────
+function TransactionsModal({
+  rows,
+  onAdd,
+  onRemove,
+  onChange,
+  onClose,
+  onSave,
+  saving,
+  syncing,
+  onRefreshSync,
+  syncAvailable,
+}) {
+  const totalDeposit = rows.filter((r) => r.type === "Deposit").reduce((s, r) => s + Number(r.amount || 0), 0);
+  const totalOut = rows
+    .filter((r) => r.type !== "Deposit")
+    .reduce((s, r) => s + Number(r.amount || 0), 0);
+  const syncedCount = rows.filter((r) => r._synced).length;
 
-const parseNum = (v) => parseFloat(String(v).replace(/,/g, '')) || 0;
-
-// ─── INPUT FIELD ──────────────────────────────────────────────────────────────
-const Field = ({ label, required, children, error }) => (
-  <div>
-    <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">
-      {label}{required && <span className="text-red-400 ml-0.5">*</span>}
-    </label>
-    {children}
-    {error && <p className="text-[10px] text-red-500 mt-1">{error}</p>}
-  </div>
-);
-
-const inputCls = "w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-50 bg-white transition";
-
-// ─── BALANCE INDICATOR ────────────────────────────────────────────────────────
-const BalanceChip = ({ diff }) => {
-  if (Math.abs(diff) < 0.01) return (
-    <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-emerald-100 text-emerald-700 text-xs font-bold">
-      <FaCheckCircle size={11} /> Reconciled
-    </span>
-  );
   return (
-    <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-red-100 text-red-600 text-xs font-bold">
-      <FaTimesCircle size={11} /> {diff > 0 ? `+${fmtPeso(diff)}` : fmtPeso(diff)} Variance
-    </span>
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+      <div className="w-full max-w-4xl bg-white rounded-xl shadow-2xl flex flex-col max-h-[90vh] overflow-hidden">
+        <div className="flex items-center justify-between px-5 py-3.5 border-b border-gray-100 shrink-0">
+          <div className="flex items-center gap-2.5">
+            <div className="flex items-center justify-center w-8 h-8 rounded-full" style={{ background: "#e8f5ec" }}>
+              <FaMoneyCheckAlt size={13} style={{ color: GREEN }} />
+            </div>
+            <div>
+              <h2 className="text-sm font-semibold text-gray-800">Reconciliation Transactions</h2>
+              <p className="text-xs text-gray-400">Deposits, withdrawals &amp; cheques — tick "Outstanding" for items not yet cleared by the bank</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={onRefreshSync}
+              disabled={syncing}
+              title="Re-pull deposits from Record Payment"
+              className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-blue-600 transition border border-blue-100 rounded-md hover:bg-blue-50 disabled:opacity-50"
+            >
+              <FaSync size={10} className={syncing ? "animate-spin" : ""} />
+              {syncing ? "Syncing..." : "Refresh synced deposits"}
+            </button>
+            <button onClick={onClose} className="p-1.5 text-gray-400 hover:text-gray-600 transition">
+              <FaTimes size={14} />
+            </button>
+          </div>
+        </div>
+
+        {/* Sync status banner */}
+        <div className="flex items-start gap-2 px-5 py-2.5 border-b border-gray-100 shrink-0 bg-blue-50/60">
+          <FaInfoCircle size={12} className="text-blue-400 mt-0.5 shrink-0" />
+          {syncAvailable ? (
+            <p className="text-xs text-blue-700">
+              {syncedCount > 0
+                ? `${syncedCount} deposit${syncedCount > 1 ? "s" : ""} synced automatically from Record Payment (locked — edit the "Outstanding" box only). Add rows below for withdrawals, cheques, and other items.`
+                : "No matching payments found in Record Payment for this bank + period yet. New deposits recorded there will sync in automatically."}
+            </p>
+          ) : (
+            <p className="text-xs text-blue-700">
+              Auto-sync isn't available for this bank name yet — deposits won't be pulled automatically. Try naming the bank "BDO" or "China Bank" to enable syncing, or continue adding rows manually below.
+            </p>
+          )}
+        </div>
+
+        <div className="flex-1 p-5 overflow-y-auto">
+          <div className="overflow-hidden border border-gray-200 rounded-lg">
+            <table className="w-full text-xs">
+              <thead className="text-gray-500 bg-gray-50">
+                <tr>
+                  <th className="w-32 px-3 py-2 font-medium text-left">Date</th>
+                  <th className="px-3 py-2 font-medium text-left">Description</th>
+                  <th className="px-3 py-2 font-medium text-left w-28">Type</th>
+                  <th className="w-32 px-3 py-2 font-medium text-left">Reference No.</th>
+                  <th className="w-32 px-3 py-2 font-medium text-right">Amount</th>
+                  <th className="w-24 px-3 py-2 font-medium text-center">Outstanding</th>
+                  <th className="w-8" />
+                </tr>
+              </thead>
+              <tbody>
+                {rows.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="py-6 text-center text-gray-400">
+                      No transactions yet.
+                    </td>
+                  </tr>
+                ) : (
+                  rows.map((row, idx) => (
+                    <tr
+                      key={row._key}
+                      className={`border-t border-gray-50 ${row._synced ? "bg-blue-50/50" : ""}`}
+                    >
+                      <td className="px-2 py-1.5">
+                        {row._synced ? (
+                          <span className="block px-2 py-1 text-xs text-gray-600">{row.date || ""}</span>
+                        ) : (
+                          <input
+                            type="date"
+                            value={row.date || ""}
+                            onChange={(e) => onChange(idx, "date", e.target.value)}
+                            className="w-full px-2 py-1 text-xs transition bg-transparent border border-transparent rounded focus:border-blue-300 focus:outline-none focus:bg-white"
+                          />
+                        )}
+                      </td>
+                      <td className="px-2 py-1.5">
+                        {row._synced ? (
+                          <div className="flex items-center gap-1.5 px-2 py-1 text-xs text-gray-600" title="Synced from Record Payment">
+                            <FaLink size={9} className="text-blue-400 shrink-0" />
+                            <span className="truncate">{row.description || ""}</span>
+                          </div>
+                        ) : (
+                          <input
+                            type="text"
+                            value={row.description || ""}
+                            onChange={(e) => onChange(idx, "description", e.target.value)}
+                            className="w-full px-2 py-1 text-xs transition bg-transparent border border-transparent rounded focus:border-blue-300 focus:outline-none focus:bg-white"
+                          />
+                        )}
+                      </td>
+                      <td className="px-2 py-1.5">
+                        {row._synced ? (
+                          <span className="inline-block px-2 py-0.5 text-[10px] font-semibold text-green-700 bg-green-100 rounded">
+                            Deposit
+                          </span>
+                        ) : (
+                          <select
+                            value={row.type || "Deposit"}
+                            onChange={(e) => onChange(idx, "type", e.target.value)}
+                            className="w-full px-2 py-1 text-xs transition bg-transparent border border-transparent rounded focus:border-blue-300 focus:outline-none focus:bg-white"
+                          >
+                            {TYPE_OPTIONS.map((t) => (
+                              <option key={t} value={t}>{t}</option>
+                            ))}
+                          </select>
+                        )}
+                      </td>
+                      <td className="px-2 py-1.5">
+                        {row._synced ? (
+                          <span className="block px-2 py-1 font-mono text-xs text-gray-600">{row.reference_no || ""}</span>
+                        ) : (
+                          <input
+                            type="text"
+                            value={row.reference_no || ""}
+                            onChange={(e) => onChange(idx, "reference_no", e.target.value)}
+                            className="w-full px-2 py-1 text-xs transition bg-transparent border border-transparent rounded focus:border-blue-300 focus:outline-none focus:bg-white"
+                          />
+                        )}
+                      </td>
+                      <td className="px-2 py-1.5">
+                        {row._synced ? (
+                          <span className="block px-2 py-1 font-mono text-xs text-right text-gray-700">{fmt(row.amount)}</span>
+                        ) : (
+                          <input
+                            type="number"
+                            value={row.amount ?? ""}
+                            onChange={(e) => onChange(idx, "amount", e.target.value)}
+                            className="w-full px-2 py-1 font-mono text-xs text-right transition bg-transparent border border-transparent rounded focus:border-blue-300 focus:outline-none focus:bg-white"
+                          />
+                        )}
+                      </td>
+                      <td className="px-2 py-1.5 text-center">
+                        <input
+                          type="checkbox"
+                          checked={!!row.is_outstanding}
+                          onChange={(e) => onChange(idx, "is_outstanding", e.target.checked)}
+                          className="w-3.5 h-3.5 accent-green-700"
+                        />
+                      </td>
+                      <td className="px-2 py-1.5">
+                        {row._synced ? (
+                          <span
+                            className="block p-1 text-gray-200 cursor-not-allowed"
+                            title="Synced from Record Payment — remove/edit the source payment instead"
+                          >
+                            <FaTrash size={10} />
+                          </span>
+                        ) : (
+                          <button onClick={() => onRemove(idx)} className="p-1 text-gray-300 transition hover:text-red-400">
+                            <FaTrash size={10} />
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+              {rows.length > 0 && (
+                <tfoot>
+                  <tr className="border-t border-gray-200 bg-gray-50">
+                    <td colSpan={4} className="px-3 py-2 font-medium text-right text-gray-600">
+                      Deposits total · Withdrawals/Cheques total
+                    </td>
+                    <td colSpan={3} className="px-3 py-2 font-mono font-semibold text-right" style={{ color: GREEN }}>
+                      ₱{fmt(totalDeposit)} &nbsp;/&nbsp; ₱{fmt(totalOut)}
+                    </td>
+                  </tr>
+                </tfoot>
+              )}
+            </table>
+          </div>
+
+          <button
+            onClick={onAdd}
+            className="flex items-center gap-2 px-3 py-2 mt-3 text-xs font-medium text-gray-600 transition border border-gray-200 border-dashed rounded-md hover:bg-gray-50"
+          >
+            <FaPlus size={10} /> Add row
+          </button>
+        </div>
+
+        <div className="flex justify-end gap-2 px-5 py-3.5 border-t border-gray-100 shrink-0">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 text-sm font-medium text-gray-600 transition border border-gray-200 rounded-md hover:bg-gray-50"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={onSave}
+            disabled={saving}
+            className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white transition rounded-md disabled:opacity-50"
+            style={{ background: GREEN }}
+          >
+            <FaSave size={11} /> {saving ? "Saving..." : "Save"}
+          </button>
+        </div>
+      </div>
+    </div>
   );
-};
+}
 
-// ─── TRANSACTION MODAL ────────────────────────────────────────────────────────
-function TransactionModal({ mode, txn, onClose, onSave }) {
-  const [form, setForm] = useState(mode === 'edit' ? { ...txn } : { ...EMPTY_TXN });
+export default function BankReconciliation({ currentUser }) {
+  // ── Header controls ──
+  const [bankName, setBankName] = useState("");
+  const [accountNo, setAccountNo] = useState("");
+  const now = new Date();
+  const [month, setMonth] = useState(now.getMonth() + 1);
+  const [year, setYear] = useState(now.getFullYear());
+  const [reconciliationId, setReconciliationId] = useState(null);
+
+  // ── Direct fields from bank_reconciliations ──
+  const [beginningBalance, setBeginningBalance] = useState(0);
+  const [bankStatementBalance, setBankStatementBalance] = useState(0);
+  const [totalDepositsNotPosted, setTotalDepositsNotPosted] = useState(0);
+  const [adjustments, setAdjustments] = useState(0);
+  const [notes, setNotes] = useState("");
+
+  const [isReconciled, setIsReconciled] = useState(false);
+  const [reconciledAt, setReconciledAt] = useState(null);
+  const [reconciledBy, setReconciledBy] = useState(null);
+  const [statementDate, setStatementDate] = useState("");
+
+  // ── Transactions ──
+  const [transactions, setTransactions] = useState([]);
+  const [showTxnModal, setShowTxnModal] = useState(false);
+  const [txnDraft, setTxnDraft] = useState([]);
+  const [syncingTxns, setSyncingTxns] = useState(false);
+
+  // ── Client Payments preview (read-only trace-back list, straight from official_receipts —
+  // shows which client/OR# backs each synced Deposit row. NOT a scoping filter: bank
+  // reconciliation is company/bank-account level, so this panel is informational only. ──
+  const [clientPayments, setClientPayments] = useState([]);
+  const [clientPaymentsLoading, setClientPaymentsLoading] = useState(false);
+  const [paymentsExpanded, setPaymentsExpanded] = useState(false);
+
+  // ── UI ──
+  const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [errors, setErrors] = useState({});
-  const set = (k, v) => setForm(p => ({ ...p, [k]: v }));
+  const [message, setMessage] = useState("");
+  const [messageType, setMessageType] = useState("");
 
-  const validate = () => {
-    const e = {};
-    if (!form.date) e.date = 'Required';
-    if (!form.description?.trim()) e.description = 'Required';
-    if (!form.amount || isNaN(parseNum(form.amount))) e.amount = 'Enter valid amount';
-    setErrors(e);
-    return !Object.keys(e).length;
+  const userFullName = currentUser?.fullName || currentUser?.full_name || "Unknown";
+
+  // ── Load a reconciliation for bank + month/year (company-level, no client scoping) ──
+  const loadReconciliation = useCallback(async () => {
+    setLoading(true);
+    try {
+      let query = supabase
+        .from("bank_reconciliations")
+        .select("*")
+        .eq("month", month)
+        .eq("year", year);
+
+      if (bankName) query = query.eq("bank_name", bankName);
+
+      const { data: recon, error } = await query.maybeSingle();
+      if (error) throw error;
+
+      if (recon) {
+        setReconciliationId(recon.id);
+        setAccountNo(recon.account_no || accountNo);
+        setBeginningBalance(recon.beginning_balance || 0);
+        setBankStatementBalance(recon.bank_statement_balance || 0);
+        setTotalDepositsNotPosted(recon.total_deposits_not_posted || 0);
+        setAdjustments(recon.adjustments || 0);
+        setNotes(recon.notes || "");
+        setIsReconciled(!!recon.is_reconciled);
+        setReconciledAt(recon.reconciled_at || null);
+        setReconciledBy(recon.reconciled_by || null);
+        setStatementDate(recon.statement_date || "");
+        const { data: txns, error: txErr } = await supabase
+          .from("bank_reconciliation_transactions")
+          .select("*")
+          .eq("reconciliation_id", recon.id)
+          .order("date", { ascending: true });
+        if (txErr) throw txErr;
+        setTransactions(txns || []);
+      } else {
+        setReconciliationId(null);
+        setBeginningBalance(0);
+        setBankStatementBalance(0);
+        setTotalDepositsNotPosted(0);
+        setAdjustments(0);
+        setNotes("");
+        setIsReconciled(false);
+        setReconciledAt(null);
+        setReconciledBy(null);
+        setStatementDate("");
+        setTransactions([]);
+        const prevMonth = month === 1 ? 12 : month - 1;
+        const prevYear = month === 1 ? year - 1 : year;
+        let prevQuery = supabase
+          .from("bank_reconciliations")
+          .select("id")
+          .eq("month", prevMonth)
+          .eq("year", prevYear);
+        if (bankName) prevQuery = prevQuery.eq("bank_name", bankName);
+
+        const { data: prevRecon } = await prevQuery.maybeSingle();
+        if (prevRecon) {
+          const { data: prevOutstanding } = await supabase
+            .from("bank_reconciliation_transactions")
+            .select("*")
+            .eq("reconciliation_id", prevRecon.id)
+            .eq("is_outstanding", true);
+          if (prevOutstanding?.length) {
+            setTransactions(
+              prevOutstanding.map((t) => ({ ...t, id: null, _carried_forward: true })),
+            );
+          }
+        }
+      }
+    } catch (err) {
+      setMessage(`Error loading reconciliation: ${err.message}`);
+      setMessageType("error");
+    }
+    setLoading(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bankName, month, year]);
+
+  useEffect(() => {
+    loadReconciliation();
+  }, [loadReconciliation]);
+
+  // ── Computed totals — see docblock above for the derivation rules ──
+  const totalReceipts = useMemo(
+    () => transactions.filter((t) => t.type === "Deposit").reduce((s, t) => s + Number(t.amount || 0), 0),
+    [transactions],
+  );
+  const totalPayments = useMemo(
+    () => transactions.filter((t) => t.type !== "Deposit").reduce((s, t) => s + Number(t.amount || 0), 0),
+    [transactions],
+  );
+  const totalUnpresentedCheques = useMemo(
+    () => transactions.filter((t) => t.type === "Cheque" && t.is_outstanding).reduce((s, t) => s + Number(t.amount || 0), 0),
+    [transactions],
+  );
+  const totalOutstandingDeposits = useMemo(
+    () => transactions.filter((t) => t.type === "Deposit" && t.is_outstanding).reduce((s, t) => s + Number(t.amount || 0), 0),
+    [transactions],
+  );
+
+  const cashBookBalance = useMemo(
+    () => Number(beginningBalance) + totalReceipts - totalPayments,
+    [beginningBalance, totalReceipts, totalPayments],
+  );
+
+  const adjustedBankTotal = useMemo(
+    () =>
+      Number(bankStatementBalance) -
+      totalUnpresentedCheques +
+      totalOutstandingDeposits +
+      Number(totalDepositsNotPosted) +
+      Number(adjustments),
+    [bankStatementBalance, totalUnpresentedCheques, totalOutstandingDeposits, totalDepositsNotPosted, adjustments],
+  );
+
+  const reconciliationDiff = useMemo(() => adjustedBankTotal - cashBookBalance, [adjustedBankTotal, cashBookBalance]);
+  const isBalanced = Math.abs(reconciliationDiff) < 0.005;
+
+  // ── Sync helper: pull matching deposits from official_receipts (RecordPayment.jsx) ──
+  const syncAvailable = !!mapBankToPaymentMethod(bankName);
+
+  const fetchSyncedDeposits = useCallback(
+    async (existingRefs) => {
+      const method = mapBankToPaymentMethod(bankName);
+      if (!method) return [];
+
+      const startDate = `${year}-${String(month).padStart(2, "0")}-01`;
+      const endDate = lastDayOfMonth(year, month);
+
+      const { data, error } = await supabase
+        .from("official_receipts")
+        .select("or_number, payment_date, amount, notes, client_id, payment_method")
+        .eq("payment_method", method)
+        .gte("payment_date", startDate)
+        .lte("payment_date", endDate)
+        .order("payment_date", { ascending: true });
+
+      if (error || !data) return [];
+
+      return data
+        .filter((r) => !existingRefs.has(r.or_number))
+        .map((r) => ({
+          _key: `or-${r.or_number}`,
+          date: r.payment_date,
+          description: r.notes || "Payment received (Record Payment)",
+          type: "Deposit",
+          reference_no: r.or_number,
+          amount: r.amount,
+          is_outstanding: false,
+          _synced: true,
+        }));
+    },
+    [bankName, month, year],
+  );
+
+  // Pulls new synced rows and merges them on top of whatever's currently in txnDraft.
+  // "OR-" prefixed reference_no is our signal that a row already came from official_receipts,
+  // so re-running this never creates duplicates.
+  const refreshSyncedDeposits = useCallback(
+    async (currentRows) => {
+      setSyncingTxns(true);
+      try {
+        const existingRefs = new Set((currentRows || []).map((r) => r.reference_no).filter(Boolean));
+        const synced = await fetchSyncedDeposits(existingRefs);
+        if (synced.length > 0) {
+          setTxnDraft((prev) => [...synced, ...prev]);
+        }
+      } finally {
+        setSyncingTxns(false);
+      }
+    },
+    [fetchSyncedDeposits],
+  );
+
+  // ── Client Payments preview — read-only trace-back list of the actual payments (with
+  // client names) that back the synced Deposit rows for this bank + period. Company-wide,
+  // all clients — no client filter here, this is just "who's inside that deposit total". ──
+  const fetchClientPayments = useCallback(async () => {
+    const method = mapBankToPaymentMethod(bankName);
+    if (!method) {
+      setClientPayments([]);
+      return;
+    }
+    setClientPaymentsLoading(true);
+    try {
+      const startDate = `${year}-${String(month).padStart(2, "0")}-01`;
+      const endDate = lastDayOfMonth(year, month);
+
+      const { data: receipts, error } = await supabase
+        .from("official_receipts")
+        .select("or_number, payment_date, amount, client_id, payment_method, notes")
+        .eq("payment_method", method)
+        .gte("payment_date", startDate)
+        .lte("payment_date", endDate)
+        .order("payment_date", { ascending: false });
+
+      if (error || !receipts) {
+        setClientPayments([]);
+        return;
+      }
+
+      const clientIds = [...new Set(receipts.map((r) => r.client_id).filter(Boolean))];
+      let clientMap = {};
+      if (clientIds.length > 0) {
+        const { data: clients } = await supabase
+          .from("client_profile")
+          .select("client_id, business_name, trade_name, first_name, middle_name, last_name")
+          .in("client_id", clientIds);
+        (clients || []).forEach((c) => {
+          clientMap[c.client_id] = c;
+        });
+      }
+
+      setClientPayments(
+        receipts.map((r) => {
+          const c = clientMap[r.client_id];
+          const name = c
+            ? c.business_name ||
+              [c.first_name, c.middle_name, c.last_name].filter(Boolean).join(" ") ||
+              r.client_id
+            : r.client_id || "Unknown client";
+          return { ...r, clientName: name };
+        }),
+      );
+    } finally {
+      setClientPaymentsLoading(false);
+    }
+  }, [bankName, month, year]);
+
+  useEffect(() => {
+    fetchClientPayments();
+  }, [fetchClientPayments]);
+
+  // ── Recalculate Totals — F2 (re-pull transactions, recompute) ──
+  const handleRecalculate = useCallback(async () => {
+    if (!reconciliationId) {
+      setMessage("Save this reconciliation first, then recalculate.");
+      setMessageType("error");
+      return;
+    }
+    setLoading(true);
+    try {
+      const { data: txns, error } = await supabase
+        .from("bank_reconciliation_transactions")
+        .select("*")
+        .eq("reconciliation_id", reconciliationId)
+        .order("date", { ascending: true });
+      if (error) throw error;
+      setTransactions(txns || []);
+      setMessage("Totals recalculated.");
+      setMessageType("success");
+    } catch (err) {
+      setMessage(`Error: ${err.message}`);
+      setMessageType("error");
+    }
+    setLoading(false);
+    setTimeout(() => setMessage(""), 3000);
+  }, [reconciliationId]);
+
+  // ── Save (and optionally print) — F3 ──
+  const handleSave = async (thenPrint = false) => {
+    setSaving(true);
+    setMessage("");
+    try {
+      const payload = {
+        bank_name: bankName,
+        account_no: accountNo || null,
+        month,
+        year,
+        statement_date: statementDate || null,
+        beginning_balance: Number(beginningBalance) || 0,
+        bank_statement_balance: Number(bankStatementBalance) || 0,
+        total_deposits_not_posted: Number(totalDepositsNotPosted) || 0,
+        adjustments: Number(adjustments) || 0,
+        notes: notes || null,
+        created_by: userFullName,
+      };
+
+      if (!payload.bank_name) {
+        setMessage("Bank name is required.");
+        setMessageType("error");
+        setSaving(false);
+        return;
+      }
+
+      let id = reconciliationId;
+      if (id) {
+        const { error } = await supabase.from("bank_reconciliations").update(payload).eq("id", id);
+        if (error) throw error;
+      } else {
+        const { data, error } = await supabase.from("bank_reconciliations").insert([payload]).select().single();
+        if (error) throw error;
+        id = data.id;
+        setReconciliationId(id);
+      }
+
+      setMessage(isBalanced ? "Reconciliation saved and balanced." : "Reconciliation saved (balance error remains).");
+      setMessageType(isBalanced ? "success" : "error");
+
+      if (thenPrint) window.print();
+    } catch (err) {
+      setMessage(`Error: ${err.message}`);
+      setMessageType("error");
+    }
+    setSaving(false);
+    setTimeout(() => setMessage(""), 4000);
   };
 
-  const handleSave = async () => {
-    if (!validate()) return;
+  // ── OK — F12: validate + save ──
+  const handleOk = async () => {
+    if (!isBalanced) {
+      setMessage(`Cannot close — reconciliation balance error of \u20b1${fmt(Math.abs(reconciliationDiff))}.`);
+      setMessageType("error");
+      setTimeout(() => setMessage(""), 4000);
+      return;
+    }
+    await handleSave(false);
+    if (reconciliationId) {
+      const { error } = await supabase
+        .from("bank_reconciliations")
+        .update({
+          is_reconciled: true,
+          reconciled_at: new Date().toISOString(),
+          reconciled_by: userFullName,
+        })
+        .eq("id", reconciliationId);
+      if (!error) {
+        setIsReconciled(true);
+        setReconciledAt(new Date().toISOString());
+        setReconciledBy(userFullName);
+      }
+    }
+  };
+
+  const handleUnreconcile = async () => {
+    if (!reconciliationId) return;
+    const { error } = await supabase
+      .from("bank_reconciliations")
+      .update({ is_reconciled: false, reconciled_at: null, reconciled_by: null })
+      .eq("id", reconciliationId);
+    if (!error) {
+      setIsReconciled(false);
+      setReconciledAt(null);
+      setReconciledBy(null);
+    }
+  };
+
+  // ── Transactions modal handlers ──
+  const openTxnModal = () => {
+    const baseRows = transactions.map((t) => ({
+      ...t,
+      _key: t.id || Math.random(),
+      // Rows previously synced from official_receipts carry an "OR-" reference_no.
+      // Flag them so they render locked, same as freshly-synced rows.
+      _synced: !!(t.reference_no && t.reference_no.startsWith("OR-")),
+    }));
+    setTxnDraft(baseRows);
+    setShowTxnModal(true);
+    refreshSyncedDeposits(baseRows);
+  };
+
+  const saveTxnModal = async () => {
+    if (!reconciliationId) {
+      setMessage("Save the reconciliation first (Save and Print) before adding transactions.");
+      setMessageType("error");
+      setShowTxnModal(false);
+      return;
+    }
     setSaving(true);
-    await onSave({ ...form, amount: parseNum(form.amount) });
+    try {
+      await supabase.from("bank_reconciliation_transactions").delete().eq("reconciliation_id", reconciliationId);
+      const rows = txnDraft
+        .filter((t) => t.description || t.amount)
+        .map(({ _key, id, _synced, ...rest }) => ({
+          ...rest,
+          reconciliation_id: reconciliationId,
+          amount: Number(rest.amount) || 0,
+          is_outstanding: !!rest.is_outstanding,
+        }));
+      if (rows.length) {
+        const { error } = await supabase.from("bank_reconciliation_transactions").insert(rows);
+        if (error) throw error;
+      }
+      setTransactions(rows);
+      setShowTxnModal(false);
+    } catch (err) {
+      setMessage(`Error: ${err.message}`);
+      setMessageType("error");
+    }
     setSaving(false);
   };
 
+  const updateTxnRow = (idx, key, val) => setTxnDraft((rows) => rows.map((r, i) => (i === idx ? { ...r, [key]: val } : r)));
+  const removeTxnRow = (idx) => setTxnDraft((rows) => rows.filter((_, i) => i !== idx));
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm">
-      <div className="w-full max-w-lg bg-white rounded-2xl shadow-2xl flex flex-col max-h-[90vh] overflow-hidden">
-        <div className="flex items-center justify-between px-6 py-4 bg-gradient-to-r from-blue-700 to-indigo-700 shrink-0">
-          <div>
-            <h2 className="text-sm font-bold text-white">
-              {mode === 'edit' ? 'Edit Transaction' : mode === 'view' ? 'Transaction Details' : 'Add Transaction'}
-            </h2>
-            <p className="text-xs text-blue-200 mt-0.5">Bank Reconciliation Entry</p>
-          </div>
-          <button onClick={onClose} className="text-xl transition text-white/60 hover:text-white">✕</button>
-        </div>
-
-        <div className="flex-1 px-6 py-5 space-y-4 overflow-y-auto">
-          <div className="grid grid-cols-2 gap-4">
-            <Field label="Date" required error={errors.date}>
-              <input type="date" value={form.date} onChange={e => set('date', e.target.value)}
-                disabled={mode === 'view'} className={inputCls} />
-            </Field>
-            <Field label="Type">
-              <select value={form.type} onChange={e => set('type', e.target.value)}
-                disabled={mode === 'view'} className={inputCls + ' cursor-pointer'}>
-                {TRANSACTION_TYPES.map(t => <option key={t}>{t}</option>)}
-              </select>
-            </Field>
-          </div>
-
-          <Field label="Description" required error={errors.description}>
-            <input value={form.description} onChange={e => set('description', e.target.value)}
-              disabled={mode === 'view'} placeholder="Transaction description..."
-              className={inputCls} />
-          </Field>
-
-          <div className="grid grid-cols-2 gap-4">
-            <Field label="Reference No.">
-              <input value={form.reference_no} onChange={e => set('reference_no', e.target.value)}
-                disabled={mode === 'view'} placeholder="Check no., OR no., etc."
-                className={inputCls} />
-            </Field>
-            <Field label="Amount (₱)" required error={errors.amount}>
-              <input value={form.amount} onChange={e => set('amount', e.target.value)}
-                disabled={mode === 'view'} placeholder="0.00" className={inputCls} />
-            </Field>
-          </div>
-
-          <Field label="Notes">
-            <textarea value={form.notes} onChange={e => set('notes', e.target.value)}
-              disabled={mode === 'view'} rows={2} placeholder="Additional notes..."
-              className={inputCls + ' resize-none'} />
-          </Field>
-
-          <label className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition ${
-            form.is_outstanding ? 'border-amber-400 bg-amber-50' : 'border-slate-200 hover:border-slate-300'
-          } ${mode === 'view' ? 'pointer-events-none opacity-60' : ''}`}>
-            <input type="checkbox" checked={form.is_outstanding}
-              onChange={e => set('is_outstanding', e.target.checked)}
-              className="w-4 h-4 accent-amber-500" />
-            <div>
-              <p className="text-sm font-semibold text-slate-700">Outstanding / Unpresented</p>
-              <p className="text-xs text-slate-400">Mark if not yet cleared in bank statement</p>
+    <div className="min-h-screen bg-gray-50">
+      {/* TOP BAR */}
+      <div className="sticky top-0 z-10 px-6 py-4 bg-white border-b border-gray-200 print:hidden">
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-3">
+            <div className="flex items-center justify-center rounded-full w-9 h-9" style={{ background: "#e8f5ec" }}>
+              <FaMoneyCheckAlt size={14} style={{ color: GREEN }} />
             </div>
-          </label>
-        </div>
-
-        <div className="flex gap-2 px-6 py-4 border-t border-slate-100 shrink-0">
-          <button onClick={onClose}
-            className="flex-1 py-2.5 text-sm font-semibold rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 transition">
-            {mode === 'view' ? 'Close' : 'Cancel'}
-          </button>
-          {mode !== 'view' && (
-            <button onClick={handleSave} disabled={saving}
-              className="flex-1 py-2.5 text-sm font-semibold rounded-xl bg-blue-600 hover:bg-blue-700 text-white transition disabled:opacity-50">
-              {saving ? 'Saving...' : mode === 'edit' ? 'Save Changes' : 'Add Transaction'}
-            </button>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ─── RECONCILIATION SHEET (matches the classic bank recon image layout) ───────
-function ReconciliationSheet({ rec, transactions, onClose }) {
-  const RECEIPT_TYPES = ['Deposit', 'Client Payment', 'Interest Income', 'Fund Transfer'];
-  const receipts    = transactions.filter(t => RECEIPT_TYPES.includes(t.type));
-  const payments    = transactions.filter(t => !RECEIPT_TYPES.includes(t.type));
-  const unpresented = transactions.filter(t => t.is_outstanding);
-
-  const totalReceipts      = receipts.reduce((s, t) => s + t.amount, 0);
-  const totalPayments      = payments.reduce((s, t) => s + t.amount, 0);
-  const totalUnpresented   = unpresented.reduce((s, t) => s + t.amount, 0);
-  const outstandingDeposits = parseNum(rec.total_deposits_not_posted || 0);
-  const depositsNotPosted  = 0; // kept as 0 unless stored separately
-  const adjustments        = parseNum(rec.adjustments || 0);
-
-  // Cash Book side
-  const cashbookBalance = parseNum(rec.beginning_balance) + totalReceipts - totalPayments;
-  // Bank Statement side
-  const adjustedBank = parseNum(rec.bank_statement_balance)
-    - totalUnpresented
-    + outstandingDeposits
-    - depositsNotPosted
-    + adjustments;
-
-  const diff = cashbookBalance - adjustedBank;
-  const reconciled = Math.abs(diff) < 0.01;
-
-  // ── Row component for form-style fields ──
-  const FormRow = ({ label, value, bold, isDate, indent }) => (
-    <div className={`flex items-center justify-between py-1.5 border-b border-slate-200 last:border-0 ${indent ? 'pl-4' : ''}`}>
-      <span className={`text-xs ${bold ? 'font-bold text-slate-800' : 'text-slate-600'}`}>{label}</span>
-      <div className={`min-w-[130px] text-right px-2 py-0.5 border border-slate-300 rounded bg-white text-xs font-mono font-semibold text-slate-800`}>
-        {isDate ? value : fmtPeso(value)}
-      </div>
-    </div>
-  );
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
-      <div className="w-full max-w-2xl bg-slate-100 rounded-xl shadow-2xl flex flex-col max-h-[95vh] overflow-hidden border border-slate-300">
-
-        {/* ── Header ── */}
-        <div className="flex items-center justify-between px-5 py-3 bg-slate-700 shrink-0">
-          <div>
-            <p className="text-[10px] font-mono text-slate-400 tracking-widest uppercase">
-              Fortiserv Business Management Enterprise Co.
-            </p>
-            <h2 className="text-sm font-bold text-white mt-0.5">Bank Reconciliation Statement</h2>
-            <p className="text-xs text-slate-300 mt-0.5">
-              {rec.bank_name}{rec.account_no ? ` · ${rec.account_no}` : ''} · {MONTHS[rec.month - 1]} {rec.year}
-              {rec.client_name && <span className="ml-2 text-blue-300">· {rec.client_name}</span>}
-            </p>
+            <div>
+              <h1 className="text-sm font-semibold text-gray-800">Bank Reconciliation</h1>
+            </div>
           </div>
-          <button onClick={onClose} className="text-xl transition text-slate-400 hover:text-white">✕</button>
         </div>
 
-        <div className="flex-1 p-5 space-y-4 overflow-y-auto">
+        <div className="flex flex-wrap items-end gap-3">
+          <div>
+            <label className={labelCls}>Statement Date</label>
+            <input
+              type="date"
+              value={statementDate}
+              onChange={(e) => setStatementDate(e.target.value)}
+              disabled={isReconciled}
+              className={`${inputCls} w-40 disabled:opacity-50 disabled:cursor-not-allowed`}
+            />
+          </div>
+          <div>
+            <label className={labelCls}>Bank Name</label>
+            <input type="text" value={bankName} onChange={(e) => setBankName(e.target.value)} disabled={isReconciled} placeholder="e.g. BDO" className={`${inputCls} disabled:opacity-50 disabled:cursor-not-allowed`} />
+            {bankName && (
+              <p className={`mt-1 text-[10px] ${syncAvailable ? "text-blue-500" : "text-gray-400"}`}>
+                {syncAvailable ? "✓ Deposits will auto-sync from Record Payment" : "Auto-sync unavailable for this bank name"}
+              </p>
+            )}
+          </div>
+          <div>
+            <label className={labelCls}>Account No.</label>
+            <input type="text" value={accountNo} onChange={(e) => setAccountNo(e.target.value)} disabled={isReconciled} className={`${inputCls} disabled:opacity-50 disabled:cursor-not-allowed`} />
+          </div>
+          <div>
+            <label className={labelCls}>Month</label>
+            <select value={month} onChange={(e) => setMonth(Number(e.target.value))} disabled={isReconciled} className={`${inputCls} disabled:opacity-50 disabled:cursor-not-allowed`}>
+              {MONTHS.map((m, i) => (
+                <option key={m} value={i + 1}>{m}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className={labelCls}>Year</label>
+            <input type="number" value={year} onChange={(e) => setYear(Number(e.target.value))} disabled={isReconciled} className={`${inputCls} w-24 disabled:opacity-50 disabled:cursor-not-allowed`} />
+          </div>
+        </div>
+      </div>
 
-          {/* ── Period selector row (mirrors image top bar) ── */}
-          <div className="flex items-center gap-4 px-4 py-2 text-xs bg-white border rounded-lg border-slate-300 text-slate-600">
-            <span className="font-semibold">Previous Months:</span>
-            <span className="px-3 py-1 font-mono border rounded border-slate-300 bg-slate-50">Current</span>
-            <span className="ml-auto font-semibold">As at:</span>
-            <span className="px-3 py-1 font-mono border rounded border-slate-300 bg-slate-50">
-              {String(rec.month).padStart(2,'0')}/{rec.year}
+      {message && (
+        <div
+          className={`mx-6 mt-4 px-4 py-2.5 rounded-md text-sm flex items-center justify-between border-l-4 print:hidden
+          ${messageType === "success" ? "bg-green-50 border-green-500 text-green-700" : "bg-red-50 border-red-500 text-red-700"}`}
+        >
+          {message}
+          <button onClick={() => setMessage("")}>
+            <FaTimes size={11} />
+          </button>
+        </div>
+      )}
+      {isReconciled && (
+        <div className="flex items-center justify-between px-5 py-3 mb-5 border rounded-lg" style={{ borderColor: "#bfe3cb", background: "#e8f5ec" }}>
+          <div className="flex items-center gap-2">
+            <FaCheckCircle size={13} style={{ color: GREEN }} />
+            <span className="text-sm font-medium" style={{ color: GREEN }}>
+              Reconciled by {reconciledBy} on {new Date(reconciledAt).toLocaleDateString("en-PH")} — locked
             </span>
           </div>
-
-          {/* ── CASH BOOK SECTION ── */}
-          <div className="overflow-hidden bg-white border rounded-lg border-slate-300">
-            <div className="px-4 py-2 border-b bg-slate-200 border-slate-300">
-              <span className="text-[11px] font-bold uppercase tracking-wider text-slate-600">Cash Book</span>
-            </div>
-            <div className="px-4 py-1 space-y-0.5">
-              <FormRow label="Cash book balance brought forward" value={rec.beginning_balance} />
-              <FormRow label="Total receipts"  value={totalReceipts}  indent />
-              <FormRow label="Total Payments"  value={totalPayments}  indent />
-              <FormRow label="Cash Book Balance" value={cashbookBalance} bold />
-            </div>
-          </div>
-
-          {/* ── BANK STATEMENT SECTION ── */}
-          <div className="overflow-hidden bg-white border rounded-lg border-slate-300">
-            <div className="px-4 py-2 border-b bg-slate-200 border-slate-300">
-              <span className="text-[11px] font-bold uppercase tracking-wider text-slate-600">Bank Statement</span>
-            </div>
-            <div className="px-4 py-1 space-y-0.5">
-              {/* Date of bank statement */}
-              <div className="flex items-center justify-between py-1.5 border-b border-slate-200">
-                <span className="text-xs text-slate-600">Date of bank statement</span>
-                <div className="min-w-[130px] text-right px-2 py-0.5 border border-slate-300 rounded bg-white text-xs font-mono font-semibold text-slate-800">
-                  {String(rec.month).padStart(2,'0')}/{rec.year}
-                </div>
-              </div>
-              <FormRow label="Balance from bank statement"           value={rec.bank_statement_balance} />
-              <FormRow label="Total unpresented cheques"             value={totalUnpresented}       indent />
-              <FormRow label="Total outstanding deposits"            value={outstandingDeposits}    indent />
-              <FormRow label="Total deposits banked not posted"      value={depositsNotPosted}      indent />
-              <FormRow label="Adjustments - total from Adj screen"   value={adjustments}            indent />
-              <FormRow label="Total"                                 value={adjustedBank}           bold />
-            </div>
-          </div>
-
-          {/* ── RECONCILIATION STATUS (mirrors image bottom bar) ── */}
-          <div className={`rounded-lg overflow-hidden border-2 ${reconciled ? 'border-emerald-500' : 'border-red-600'}`}>
-            <div className={`flex items-center justify-between px-4 py-3 ${reconciled ? 'bg-emerald-600' : 'bg-red-600'}`}>
-              <div className="flex items-center gap-2">
-                {reconciled
-                  ? <FaCheckCircle size={15} className="text-white" />
-                  : <FaExclamationTriangle size={15} className="text-white" />}
-                <span className="text-sm font-bold tracking-wide text-white uppercase">
-                  {reconciled ? 'RECONCILIATION OK' : 'RECONCILIATION BALANCE ERROR'}
-                </span>
-              </div>
-              <span className="font-mono text-lg font-bold text-white">
-                {reconciled ? '₱0.00' : fmtPeso(Math.abs(diff))}
-              </span>
-            </div>
-            {!reconciled && (
-              <div className="px-4 py-2 bg-red-50">
-                <p className="text-xs text-red-700">
-                  ⚠ Difference of <strong>{fmtPeso(Math.abs(diff))}</strong> must be investigated before closing this period.
-                  {diff > 0 ? ' Cash book is higher than bank.' : ' Bank statement is higher than cash book.'}
-                </p>
-              </div>
-            )}
-          </div>
-
-          {/* ── UNPRESENTED CHEQUES DETAIL ── */}
-          {unpresented.length > 0 && (
-            <div>
-              <p className="mb-2 text-xs font-bold tracking-wide uppercase text-slate-500">
-                Unpresented Cheques / Outstanding Items ({unpresented.length})
-              </p>
-              <div className="overflow-hidden border rounded-lg border-amber-200">
-                <table className="w-full text-xs">
-                  <thead className="border-b bg-amber-50 border-amber-200">
-                    <tr>
-                      {['Date','Description','Reference No.','Type','Amount'].map(h => (
-                        <th key={h} className="px-3 py-2 text-left text-[10px] font-bold uppercase tracking-wide text-amber-700">{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {unpresented.map((t, i) => (
-                      <tr key={i} className={`border-t border-amber-100 ${i%2===1?'bg-amber-50/50':'bg-white'}`}>
-                        <td className="px-3 py-2 text-slate-500 whitespace-nowrap">{fmtDate(t.date)}</td>
-                        <td className="px-3 py-2 font-medium text-slate-700">{t.description}</td>
-                        <td className="px-3 py-2 font-mono text-slate-500">{t.reference_no || '—'}</td>
-                        <td className="px-3 py-2">
-                          <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 font-semibold">{t.type}</span>
-                        </td>
-                        <td className="px-3 py-2 font-mono font-bold text-right text-slate-800">{fmtPeso(t.amount)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                  <tfoot>
-                    <tr className="border-t-2 border-amber-300 bg-amber-100">
-                      <td colSpan={4} className="px-3 py-2 text-xs font-bold text-amber-800">Total Unpresented</td>
-                      <td className="px-3 py-2 font-mono font-bold text-right text-amber-800">{fmtPeso(totalUnpresented)}</td>
-                    </tr>
-                  </tfoot>
-                </table>
-              </div>
-            </div>
-          )}
-
-          {/* ── SUMMARY ROW ── */}
-          <div className="grid grid-cols-3 gap-3">
-            {[
-              { label: 'Total Receipts', val: totalReceipts,  cls: 'text-emerald-700' },
-              { label: 'Total Payments', val: totalPayments,  cls: 'text-red-600'     },
-              { label: 'Net Movement',   val: totalReceipts - totalPayments, cls: 'text-blue-700' },
-            ].map(s => (
-              <div key={s.label} className="px-4 py-3 text-center bg-white border rounded-lg border-slate-200">
-                <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400 mb-1">{s.label}</p>
-                <p className={`text-sm font-bold font-mono ${s.cls}`}>{fmtPeso(s.val)}</p>
-              </div>
-            ))}
-          </div>
-
-          {/* ── SIGNATORIES ── */}
-          <div className="grid grid-cols-2 gap-8 pt-2">
-            {['Prepared By', 'Reviewed By'].map(s => (
-              <div key={s} className="text-center">
-                <div className="h-10 mb-1 border-b-2 border-slate-700" />
-                <p className="text-xs font-bold text-slate-700">{s}</p>
-                <p className="text-[10px] text-slate-400">Signature over Printed Name / Date</p>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* ── Footer ── */}
-        <div className="flex gap-2 px-5 py-3 border-t border-slate-300 bg-slate-100 shrink-0">
-          <button onClick={onClose}
-            className="flex-1 py-2 text-sm font-semibold transition rounded-lg bg-slate-200 hover:bg-slate-300 text-slate-700">
-            Close
+          <button onClick={handleUnreconcile} className="text-xs font-medium text-blue-500 hover:underline">
+            Unreconcile
           </button>
         </div>
-      </div>
-    </div>
-  );
-}
-
-// ─── MAIN ──────────────────────────────────────────────────────────────────────
-export default function BankReconciliation({ currentUser }) {
-  const [records, setRecords]         = useState([]);
-  const [clients, setClients]         = useState([]);
-  const [loading, setLoading]         = useState(true);
-  const [fetching, setFetching]       = useState(false);
-  const [message, setMessage]         = useState('');
-  const [msgType, setMsgType]         = useState('');
-
-  // Active record & its transactions
-  const [activeRec, setActiveRec]     = useState(null);
-  const [transactions, setTransactions] = useState([]);
-  const [txnModal, setTxnModal]       = useState(null);
-  const [sheetOpen, setSheetOpen]     = useState(false);
-  const [deleteTarget, setDeleteTarget] = useState(null);
-
-  // New/edit reconciliation header form
-  const [showRecForm, setShowRecForm] = useState(false);
-  const [recForm, setRecForm]         = useState({
-    bank_name: '', account_no: '', month: new Date().getMonth() + 1,
-    year: new Date().getFullYear(), beginning_balance: '',
-    bank_statement_balance: '', total_deposits_not_posted: '',
-    adjustments: '', notes: '', client_id: '', client_name: '',
-  });
-  const [recErrors, setRecErrors]     = useState({});
-  const [savingRec, setSavingRec]     = useState(false);
-
-  // Filters
-  const [search, setSearch]           = useState('');
-  const [filterYear, setFilterYear]   = useState('all');
-  const [filterMonth, setFilterMonth] = useState('all');
-  const [currentPage, setCurrentPage] = useState(1);
-  const PAGE_SIZE = 10;
-
-  // ── Fetch ──────────────────────────────────────────────────────────────────
-  const fetchRecords = useCallback(async () => {
-    setFetching(true);
-    try {
-      const { data, error } = await supabase
-        .from('bank_reconciliations')
-        .select('*')
-        .order('year', { ascending: false })
-        .order('month', { ascending: false });
-      if (error) throw error;
-      setRecords(data || []);
-    } catch (e) { showMsg(`Error: ${e.message}`, 'error'); }
-    finally { setLoading(false); setFetching(false); }
-  }, []);
-
-  const fetchClients = useCallback(async () => {
-    const { data } = await supabase
-      .from('client_profile')
-      .select('client_id,business_name')
-      .eq('approval_status', 'approved')
-      .order('business_name');
-    if (data) setClients(data);
-  }, []);
-
-  const fetchTransactions = useCallback(async (recId) => {
-    const { data } = await supabase
-      .from('bank_reconciliation_transactions')
-      .select('*')
-      .eq('reconciliation_id', recId)
-      .order('date', { ascending: true });
-    setTransactions(data || []);
-  }, []);
-
-  useEffect(() => { fetchRecords(); fetchClients(); }, [fetchRecords, fetchClients]);
-  useEffect(() => { if (activeRec) fetchTransactions(activeRec.id); }, [activeRec, fetchTransactions]);
-  useEffect(() => { setCurrentPage(1); }, [search, filterYear, filterMonth]);
-
-  const showMsg = (msg, type) => {
-    setMessage(msg); setMsgType(type);
-    setTimeout(() => setMessage(''), 3000);
-  };
-
-  // ── Reconciliation header CRUD ─────────────────────────────────────────────
-  const validateRec = () => {
-    const e = {};
-    if (!recForm.bank_name?.trim()) e.bank_name = 'Required';
-    if (!recForm.beginning_balance) e.beginning_balance = 'Required';
-    if (!recForm.bank_statement_balance) e.bank_statement_balance = 'Required';
-    setRecErrors(e);
-    return !Object.keys(e).length;
-  };
-
-  const handleSaveRec = async () => {
-    if (!validateRec()) return;
-    setSavingRec(true);
-    try {
-      const payload = {
-        ...recForm,
-        beginning_balance: parseNum(recForm.beginning_balance),
-        bank_statement_balance: parseNum(recForm.bank_statement_balance),
-        total_deposits_not_posted: parseNum(recForm.total_deposits_not_posted),
-        adjustments: parseNum(recForm.adjustments),
-        created_by: currentUser?.username || 'System',
-      };
-      const { error } = recForm.id
-        ? await supabase.from('bank_reconciliations').update(payload).eq('id', recForm.id)
-        : await supabase.from('bank_reconciliations').insert([payload]);
-      if (error) throw error;
-      showMsg('✅ Reconciliation record saved!', 'success');
-      setShowRecForm(false);
-      setRecForm({ bank_name:'', account_no:'', month: new Date().getMonth()+1, year: new Date().getFullYear(), beginning_balance:'', bank_statement_balance:'', total_deposits_not_posted:'', adjustments:'', notes:'', client_id:'', client_name:'' });
-      fetchRecords();
-    } catch (e) { showMsg(`❌ ${e.message}`, 'error'); }
-    finally { setSavingRec(false); }
-  };
-
-  const handleDeleteRec = async (rec) => {
-    if (!window.confirm(`Delete reconciliation for ${rec.bank_name} — ${MONTHS[rec.month-1]} ${rec.year}?`)) return;
-    await supabase.from('bank_reconciliation_transactions').delete().eq('reconciliation_id', rec.id);
-    await supabase.from('bank_reconciliations').delete().eq('id', rec.id);
-    if (activeRec?.id === rec.id) { setActiveRec(null); setTransactions([]); }
-    showMsg('✅ Record deleted.', 'success');
-    fetchRecords();
-  };
-
-  // ── Transaction CRUD ───────────────────────────────────────────────────────
-  const handleSaveTxn = async (form) => {
-    try {
-      const payload = { ...form, reconciliation_id: activeRec.id };
-      const { error } = form.id
-        ? await supabase.from('bank_reconciliation_transactions').update(payload).eq('id', form.id)
-        : await supabase.from('bank_reconciliation_transactions').insert([payload]);
-      if (error) throw error;
-      showMsg('✅ Transaction saved!', 'success');
-      setTxnModal(null);
-      fetchTransactions(activeRec.id);
-    } catch (e) { showMsg(`❌ ${e.message}`, 'error'); }
-  };
-
-  const handleDeleteTxn = async (txn) => {
-    await supabase.from('bank_reconciliation_transactions').delete().eq('id', txn.id);
-    showMsg('✅ Transaction deleted.', 'success');
-    fetchTransactions(activeRec.id);
-  };
-
-  // ── Derived: computed totals ───────────────────────────────────────────────
-  const computeTotals = (txns) => {
-    const deposits  = txns.filter(t => ['Deposit','Client Payment','Interest Income','Fund Transfer'].includes(t.type));
-    const payments  = txns.filter(t => !['Deposit','Client Payment','Interest Income','Fund Transfer'].includes(t.type));
-    const outstanding = txns.filter(t => t.is_outstanding);
-    const totalDep  = deposits.reduce((s, t) => s + t.amount, 0);
-    const totalPay  = payments.reduce((s, t) => s + t.amount, 0);
-    const totalOut  = outstanding.reduce((s, t) => s + t.amount, 0);
-    return { totalDep, totalPay, totalOut };
-  };
-
-  const getCashbookBalance = (rec, txns) => {
-    const { totalDep, totalPay } = computeTotals(txns);
-    return parseNum(rec.beginning_balance) + totalDep - totalPay;
-  };
-
-  const getAdjustedBank = (rec, txns) => {
-    const { totalOut } = computeTotals(txns);
-    return parseNum(rec.bank_statement_balance) - totalOut + parseNum(rec.total_deposits_not_posted || 0) + parseNum(rec.adjustments || 0);
-  };
-
-  // ── Filter records ─────────────────────────────────────────────────────────
-  const filtered = records.filter(r => {
-    if (filterYear !== 'all' && String(r.year) !== filterYear) return false;
-    if (filterMonth !== 'all' && String(r.month) !== filterMonth) return false;
-    if (search.trim()) {
-      const t = search.toLowerCase();
-      return [r.bank_name, r.account_no, r.client_name].some(f => (f||'').toLowerCase().includes(t));
-    }
-    return true;
-  });
-
-  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
-  const paginated  = filtered.slice((currentPage-1)*PAGE_SIZE, currentPage*PAGE_SIZE);
-  const uniqueYears = [...new Set(records.map(r => r.year))].sort((a,b) => b-a);
-
-  if (loading) return (
-    <div className="flex items-center justify-center min-h-[60vh]">
-      <div className="text-center">
-        <div className="w-10 h-10 mx-auto mb-3 border-2 border-blue-600 rounded-full border-t-transparent animate-spin" />
-        <p className="text-sm text-slate-500">Loading reconciliation records...</p>
-      </div>
-    </div>
-  );
-
-  return (
-    <div className="min-h-screen bg-slate-50">
-
-      {/* ── TOP BAR ── */}
-      <div className="sticky top-0 z-20 bg-white border-b shadow-sm border-slate-200">
-        <div className="flex items-center justify-between max-w-screen-xl gap-4 px-6 py-3 mx-auto">
-          <div>
-            <div className="flex items-center gap-2">
-              <div className="flex items-center justify-center bg-indigo-600 rounded-lg w-7 h-7">
-                <FaUniversity size={12} className="text-white" />
-              </div>
-              <h1 className="text-base font-bold text-slate-900">Bank Reconciliation</h1>
-            </div>
-            <p className="text-xs text-slate-400 mt-0.5 ml-9">
-              {records.length} records{fetching && <span className="ml-2 text-blue-400 animate-pulse">· syncing...</span>}
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            <button onClick={fetchRecords} disabled={fetching}
-              className="p-2 transition rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 disabled:opacity-40">
-              <FaSync size={12} className={fetching ? 'animate-spin' : ''} />
-            </button>
-            <button onClick={() => setShowRecForm(true)}
-              className="flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white transition bg-indigo-600 rounded-lg shadow hover:bg-indigo-700 shadow-indigo-400/30">
-              <FaPlus size={11} /> New Record
-            </button>
-          </div>
-        </div>
-      </div>
-
-      <div className="max-w-screen-xl px-6 py-5 mx-auto space-y-4">
-
-        {/* ── MESSAGE ── */}
-        {message && (
-          <div className={`flex items-center justify-between p-3 rounded-lg text-sm border-l-4 ${
-            msgType === 'success' ? 'bg-emerald-50 border-emerald-400 text-emerald-700' : 'bg-red-50 border-red-400 text-red-700'
-          }`}>
-            {message}<button onClick={() => setMessage('')}><FaTimes size={11} /></button>
-          </div>
-        )}
-
-        {/* ── LAYOUT: List left, Detail right ── */}
-        <div className="grid grid-cols-1 gap-5 lg:grid-cols-5">
-
-          {/* ── LEFT: Records List ── */}
-          <div className="space-y-3 lg:col-span-2">
-
-            {/* Search + filter */}
-            <div className="p-3 space-y-2 bg-white border shadow-sm rounded-xl border-slate-200">
-              <div className="relative">
-                <FaSearch className="absolute -translate-y-1/2 left-3 top-1/2 text-slate-400" size={11} />
-                <input value={search} onChange={e => setSearch(e.target.value)}
-                  placeholder="Search bank, account..."
-                  className="w-full pl-8 pr-3 py-1.5 text-sm border border-slate-200 rounded-lg focus:outline-none focus:border-blue-400" />
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                <select value={filterYear} onChange={e => setFilterYear(e.target.value)}
-                  className="px-2 py-1.5 text-xs border border-slate-200 rounded-lg bg-white focus:outline-none cursor-pointer">
-                  <option value="all">All Years</option>
-                  {uniqueYears.map(y => <option key={y} value={y}>{y}</option>)}
-                </select>
-                <select value={filterMonth} onChange={e => setFilterMonth(e.target.value)}
-                  className="px-2 py-1.5 text-xs border border-slate-200 rounded-lg bg-white focus:outline-none cursor-pointer">
-                  <option value="all">All Months</option>
-                  {MONTHS.map((m, i) => <option key={i} value={i+1}>{m}</option>)}
-                </select>
-              </div>
-            </div>
-
-            {/* Record cards */}
-            <div className="space-y-2">
-              {paginated.length === 0 ? (
-                <div className="p-8 text-center bg-white border shadow-sm rounded-xl border-slate-200">
-                  <FaUniversity size={28} className="mx-auto mb-2 text-slate-200" />
-                  <p className="text-sm font-semibold text-slate-400">No records found</p>
-                  <button onClick={() => setShowRecForm(true)}
-                    className="px-4 py-2 mt-3 text-xs font-semibold text-white transition bg-indigo-600 rounded-lg hover:bg-indigo-700">
-                    + New Record
-                  </button>
+      )}
+      {/* BODY */}
+      <div className="grid grid-cols-1 gap-5 p-6 lg:grid-cols-3">
+        <div className="space-y-5 lg:col-span-2">
+          {/* Client Payments — read-only trace-back, not a duplicate of the Transactions
+              modal table. Purpose: quick sanity-check of what's about to be counted
+              as Deposits, and a trace-back to which client/OR# each one came from,
+              WITHOUT re-showing the full editable table (that stays in the modal). */}
+          <div className="overflow-hidden bg-white border border-gray-200 rounded-lg">
+            <button
+              onClick={() => setPaymentsExpanded((v) => !v)}
+              disabled={clientPayments.length === 0}
+              className="flex items-center justify-between w-full px-5 py-3.5 text-left transition hover:bg-gray-50 disabled:cursor-default disabled:hover:bg-white"
+            >
+              <div className="flex items-center gap-3">
+                <div className="flex items-center justify-center w-8 h-8 rounded-full shrink-0" style={{ background: "#e8f5ec" }}>
+                  <FaLink size={11} style={{ color: GREEN }} />
                 </div>
-              ) : paginated.map(rec => {
-                const isActive = activeRec?.id === rec.id;
-                return (
-                  <div key={rec.id}
-                    onClick={() => setActiveRec(rec)}
-                    className={`bg-white rounded-xl border p-4 cursor-pointer shadow-sm transition-all ${
-                      isActive ? 'border-indigo-400 ring-2 ring-indigo-100' : 'border-slate-200 hover:border-indigo-300 hover:shadow-md'
-                    }`}>
-                    <div className="flex items-start justify-between">
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-1">
-                          <span className="text-sm font-bold truncate text-slate-800">{rec.bank_name}</span>
-                        </div>
-                        {rec.account_no && <p className="text-[10px] font-mono text-slate-400">{rec.account_no}</p>}
-                        <p className="mt-1 text-xs text-slate-500">{MONTHS[rec.month-1]} {rec.year}</p>
-                        {rec.client_name && (
-                          <p className="text-[10px] text-slate-400 mt-0.5 truncate">{rec.client_name}</p>
-                        )}
-                      </div>
-                      <div className="ml-2 text-right shrink-0">
-                        <p className="font-mono text-xs font-bold text-slate-800">{fmtPeso(rec.bank_statement_balance)}</p>
-                        <p className="text-[10px] text-slate-400">Bank Stmt</p>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-
-            {/* Pagination */}
-            {totalPages > 1 && (
-              <div className="flex items-center justify-between px-3 py-2 bg-white border shadow-sm rounded-xl border-slate-200">
-                <span className="text-xs text-slate-400">{filtered.length} records</span>
-                <div className="flex items-center gap-1">
-                  {[
-                    { icon: FaAngleDoubleLeft, action: () => setCurrentPage(1), disabled: currentPage===1 },
-                    { icon: FaChevronLeft, action: () => setCurrentPage(p=>p-1), disabled: currentPage===1 },
-                    { icon: FaChevronRight, action: () => setCurrentPage(p=>p+1), disabled: currentPage===totalPages },
-                    { icon: FaAngleDoubleRight, action: () => setCurrentPage(totalPages), disabled: currentPage===totalPages },
-                  ].map((btn, i) => (
-                    <button key={i} onClick={btn.action} disabled={btn.disabled}
-                      className="p-1 transition rounded text-slate-400 hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed">
-                      <btn.icon size={10} />
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* ── RIGHT: Active Record Detail ── */}
-          <div className="lg:col-span-3">
-            {!activeRec ? (
-              <div className="flex flex-col items-center justify-center h-full p-16 text-center bg-white border shadow-sm rounded-xl border-slate-200">
-                <FaUniversity size={40} className="mb-4 text-slate-200" />
-                <p className="font-semibold text-slate-400">Select a record to view</p>
-                <p className="mt-1 text-xs text-slate-300">or create a new reconciliation</p>
-                <button onClick={() => setShowRecForm(true)}
-                  className="px-4 py-2 mt-4 text-sm font-semibold text-white transition bg-indigo-600 rounded-lg hover:bg-indigo-700">
-                  + New Record
-                </button>
-              </div>
-            ) : (
-              <div className="space-y-4">
-
-                {/* Record header card */}
-                <div className="p-5 bg-white border shadow-sm rounded-xl border-slate-200">
-                  <div className="flex items-start justify-between mb-4">
-                    <div>
-                      <h2 className="text-base font-bold text-slate-900">{activeRec.bank_name}</h2>
-                      {activeRec.account_no && <p className="font-mono text-xs text-slate-400">{activeRec.account_no}</p>}
-                      <p className="mt-1 text-xs text-slate-500">{MONTHS[activeRec.month-1]} {activeRec.year}
-                        {activeRec.client_name && <span className="ml-2 text-blue-500">· {activeRec.client_name}</span>}
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      {/* Reconciliation status */}
-                      <BalanceChip diff={getCashbookBalance(activeRec, transactions) - getAdjustedBank(activeRec, transactions)} />
-                      <button onClick={() => setSheetOpen(true)}
-                        className="p-2 transition rounded-lg text-slate-500 hover:text-indigo-600 hover:bg-indigo-50" title="View Statement">
-                        <FaEye size={13} />
-                      </button>
-                      <button onClick={() => { setRecForm({ ...activeRec, beginning_balance: activeRec.beginning_balance, bank_statement_balance: activeRec.bank_statement_balance, total_deposits_not_posted: activeRec.total_deposits_not_posted||'', adjustments: activeRec.adjustments||'' }); setShowRecForm(true); }}
-                        className="p-2 transition rounded-lg text-slate-500 hover:text-emerald-600 hover:bg-emerald-50" title="Edit">
-                        <FaEdit size={13} />
-                      </button>
-                      <button onClick={() => handleDeleteRec(activeRec)}
-                        className="p-2 transition rounded-lg text-slate-500 hover:text-red-500 hover:bg-red-50" title="Delete">
-                        <FaTrashAlt size={12} />
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Quick summary grid */}
-                  <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-                    {[
-                      { label: 'Beginning Balance', val: fmtPeso(activeRec.beginning_balance), cls: 'text-slate-800' },
-                      { label: 'Bank Statement', val: fmtPeso(activeRec.bank_statement_balance), cls: 'text-slate-800' },
-                      { label: 'Cashbook Balance', val: fmtPeso(getCashbookBalance(activeRec, transactions)), cls: 'text-blue-700' },
-                      { label: 'Adjusted Bank', val: fmtPeso(getAdjustedBank(activeRec, transactions)), cls: 'text-indigo-700' },
-                    ].map(s => (
-                      <div key={s.label} className="p-3 border rounded-lg bg-slate-50 border-slate-100">
-                        <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">{s.label}</p>
-                        <p className={`text-sm font-bold font-mono mt-0.5 ${s.cls}`}>{s.val}</p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Transactions */}
-                <div className="overflow-hidden bg-white border shadow-sm rounded-xl border-slate-200">
-                  <div className="flex items-center justify-between px-5 py-3 border-b border-slate-100">
-                    <div className="flex items-center gap-2">
-                      <FaCalculator size={13} className="text-slate-500" />
-                      <h3 className="text-sm font-bold text-slate-800">Transactions</h3>
-                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-500">{transactions.length}</span>
-                    </div>
-                    <button onClick={() => setTxnModal({ mode: 'create', txn: null })}
-                      className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition">
-                      <FaPlus size={9} /> Add
-                    </button>
-                  </div>
-
-                  {transactions.length === 0 ? (
-                    <div className="py-10 text-center">
-                      <p className="text-sm text-slate-400">No transactions yet</p>
-                      <button onClick={() => setTxnModal({ mode: 'create', txn: null })}
-                        className="mt-2 px-3 py-1.5 text-xs font-semibold bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 transition">
-                        + Add Transaction
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-sm">
-                        <thead>
-                          <tr className="border-b bg-slate-50/80 border-slate-200">
-                            {['Date','Description','Type','Ref No.','Amount','Outstanding',''].map(h => (
-                              <th key={h} className="px-3 py-2.5 text-left text-[10px] font-bold uppercase tracking-wide text-slate-400">{h}</th>
-                            ))}
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {transactions.map((txn, i) => (
-                            <tr key={txn.id} className="transition border-b border-slate-100 hover:bg-slate-50/50 group">
-                              <td className="px-3 py-2.5 text-xs text-slate-500 whitespace-nowrap">{fmtDate(txn.date)}</td>
-                              <td className="px-3 py-2.5 max-w-[160px]">
-                                <p className="text-xs font-semibold truncate text-slate-800" title={txn.description}>{txn.description}</p>
-                                {txn.notes && <p className="text-[10px] text-slate-400 truncate">{txn.notes}</p>}
-                              </td>
-                              <td className="px-3 py-2.5 whitespace-nowrap">
-                                <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">{txn.type}</span>
-                              </td>
-                              <td className="px-3 py-2.5 font-mono text-xs text-slate-500">{txn.reference_no || '—'}</td>
-                              <td className="px-3 py-2.5 font-mono text-xs font-bold text-slate-800 whitespace-nowrap">{fmtPeso(txn.amount)}</td>
-                              <td className="px-3 py-2.5 text-center">
-                                {txn.is_outstanding
-                                  ? <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700"><FaExclamationTriangle size={7} /> Pending</span>
-                                  : <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700"><FaCheck size={7} /> Cleared</span>}
-                              </td>
-                              <td className="px-3 py-2.5">
-                                <div className="flex items-center gap-1 transition-opacity opacity-0 group-hover:opacity-100">
-                                  <button onClick={() => setTxnModal({ mode: 'view', txn })}
-                                    className="p-1 transition rounded text-slate-400 hover:text-blue-500 hover:bg-blue-50"><FaEye size={11} /></button>
-                                  <button onClick={() => setTxnModal({ mode: 'edit', txn })}
-                                    className="p-1 transition rounded text-slate-400 hover:text-emerald-500 hover:bg-emerald-50"><FaEdit size={11} /></button>
-                                  <button onClick={() => handleDeleteTxn(txn)}
-                                    className="p-1 transition rounded text-slate-400 hover:text-red-500 hover:bg-red-50"><FaTrashAlt size={10} /></button>
-                                </div>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                        {/* Totals footer */}
-                        <tfoot>
-                          <tr className="border-t-2 bg-slate-50 border-slate-300">
-                            <td colSpan={4} className="px-3 py-2.5 text-xs font-bold text-slate-600">
-                              {transactions.length} transaction{transactions.length !== 1 ? 's' : ''} ·{' '}
-                              {transactions.filter(t=>t.is_outstanding).length} outstanding
-                            </td>
-                            <td className="px-3 py-2.5 font-mono text-sm font-bold text-slate-800">
-                              {fmtPeso(transactions.reduce((s,t)=>s+t.amount, 0))}
-                            </td>
-                            <td colSpan={2} />
-                          </tr>
-                        </tfoot>
-                      </table>
-                    </div>
+                <div>
+                  <p className="text-sm font-medium text-gray-800">
+                    {clientPaymentsLoading
+                      ? "Checking Record Payment..."
+                      : !syncAvailable
+                        ? "Client payment sync unavailable"
+                        : clientPayments.length === 0
+                          ? "No client payments for this period yet"
+                          : `${clientPayments.length} client payment${clientPayments.length > 1 ? "s" : ""} synced from Record Payment`}
+                  </p>
+                  {!clientPaymentsLoading && syncAvailable && clientPayments.length > 0 && (
+                    <p className="text-xs text-gray-400">
+                      ₱{fmt(clientPayments.reduce((s, p) => s + Number(p.amount || 0), 0))} total · counted as Deposits below
+                    </p>
+                  )}
+                  {!clientPaymentsLoading && !syncAvailable && (
+                    <p className="text-xs text-gray-400">Try "BDO" or "China Bank" as the bank name to enable syncing</p>
                   )}
                 </div>
               </div>
+              {clientPaymentsLoading ? (
+                <div className="w-3.5 h-3.5 border-2 border-blue-400 border-t-transparent rounded-full animate-spin shrink-0" />
+              ) : (
+                clientPayments.length > 0 && (
+                  <span className="text-gray-300 shrink-0">
+                    {paymentsExpanded ? <FaChevronUp size={11} /> : <FaChevronDown size={11} />}
+                  </span>
+                )
+              )}
+            </button>
+
+            {paymentsExpanded && clientPayments.length > 0 && (
+              <div className="px-5 pb-4 -mt-1 border-t border-gray-100">
+                <div className="mt-3 overflow-hidden border border-gray-100 rounded-lg">
+                  <table className="w-full text-xs">
+                    <thead className="text-gray-500 bg-gray-50">
+                      <tr>
+                        <th className="px-3 py-2 font-medium text-left">Date</th>
+                        <th className="px-3 py-2 font-medium text-left">Client</th>
+                        <th className="px-3 py-2 font-medium text-left">OR #</th>
+                        <th className="px-3 py-2 font-medium text-right">Amount</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {clientPayments.map((p) => (
+                        <tr key={p.or_number} className="border-t border-gray-50">
+                          <td className="px-3 py-2 text-gray-600">{p.payment_date}</td>
+                          <td className="px-3 py-2 text-gray-800">{p.clientName}</td>
+                          <td className="px-3 py-2 font-mono text-gray-500">{p.or_number}</td>
+                          <td className="px-3 py-2 font-mono text-right text-gray-700">₱{fmt(p.amount)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <button
+                  onClick={openTxnModal}
+                  className="mt-3 text-xs font-medium text-blue-500 hover:underline"
+                >
+                  Open in Transactions to tag outstanding items →
+                </button>
+              </div>
             )}
           </div>
+
+          {/* Cash Book side */}
+          <div className="p-5 bg-white border border-gray-200 rounded-lg">
+            <p className="mb-4 text-xs font-semibold tracking-wider text-gray-400 uppercase">Cash Book</p>
+            <div className="space-y-3">
+              <div className="flex items-center justify-between gap-4">
+                <span className={labelCls}>Beginning Balance</span>
+                <input
+                  type="number"
+                  value={beginningBalance}
+                  onChange={(e) => setBeginningBalance(e.target.value)}
+                  className="w-40 px-3 py-2 font-mono text-sm text-right border border-gray-200 rounded-md focus:outline-none focus:border-blue-400"
+                />
+              </div>
+              <div className="flex items-center justify-between gap-4">
+                <span className={labelCls}>Total receipts</span>
+                <div className={`w-40 ${readOnlyCls}`}>{fmt(totalReceipts)}</div>
+              </div>
+              <div className="flex items-center justify-between gap-4">
+                <span className={labelCls}>Total payments</span>
+                <div className={`w-40 ${readOnlyCls}`}>{fmt(totalPayments)}</div>
+              </div>
+              <div className="flex items-center justify-between gap-4 pt-3 border-t border-gray-100">
+                <span className="text-sm font-semibold text-gray-800">Cash Book Balance</span>
+                <div
+                  className="w-40 px-3 py-2 font-mono text-sm font-bold text-right border rounded-md"
+                  style={{ borderColor: GREEN, color: GREEN, background: "#e8f5ec" }}
+                >
+                  {fmt(cashBookBalance)}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Bank Statement side */}
+          <div className="p-5 bg-white border border-gray-200 rounded-lg">
+            <p className="mb-4 text-xs font-semibold tracking-wider text-gray-400 uppercase">Bank Statement</p>
+            <div className="space-y-3">
+              <div className="flex items-center justify-between gap-4">
+                <span className={labelCls}>Balance from bank statement</span>
+                <input
+                  type="number"
+                  value={bankStatementBalance}
+                  onChange={(e) => setBankStatementBalance(e.target.value)}
+                  className="w-40 px-3 py-2 font-mono text-sm text-right border border-gray-200 rounded-md focus:outline-none focus:border-blue-400"
+                />
+              </div>
+              <button onClick={openTxnModal} className="flex items-center justify-between w-full gap-4 text-left">
+                <span className={`${labelCls} hover:text-blue-500`}>Total unpresented cheques</span>
+                <div className={`w-40 ${readOnlyCls} hover:border-blue-300`}>{fmt(totalUnpresentedCheques)}</div>
+              </button>
+              <button onClick={openTxnModal} className="flex items-center justify-between w-full gap-4 text-left">
+                <span className={`${labelCls} hover:text-blue-500`}>Total outstanding deposits</span>
+                <div className={`w-40 ${readOnlyCls} hover:border-blue-300`}>{fmt(totalOutstandingDeposits)}</div>
+              </button>
+              <div className="flex items-center justify-between gap-4">
+                <span className={labelCls}>Total deposits banked not posted</span>
+                <input
+                  type="number"
+                  value={totalDepositsNotPosted}
+                  onChange={(e) => setTotalDepositsNotPosted(e.target.value)}
+                  className="w-40 px-3 py-2 font-mono text-sm text-right border border-gray-200 rounded-md focus:outline-none focus:border-blue-400"
+                />
+              </div>
+              <div className="flex items-center justify-between gap-4">
+                <span className={labelCls}>Adjustments</span>
+                <input
+                  type="number"
+                  value={adjustments}
+                  onChange={(e) => setAdjustments(e.target.value)}
+                  className="w-40 px-3 py-2 font-mono text-sm text-right border border-gray-200 rounded-md focus:outline-none focus:border-blue-400"
+                />
+              </div>
+              <div className="flex items-center justify-between gap-4 pt-3 border-t border-gray-100">
+                <span className="text-sm font-semibold text-gray-800">Total</span>
+                <div
+                  className="w-40 px-3 py-2 font-mono text-sm font-bold text-right border rounded-md"
+                  style={{ borderColor: GREEN, color: GREEN, background: "#e8f5ec" }}
+                >
+                  {fmt(adjustedBankTotal)}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <label className={labelCls}>Notes</label>
+            <textarea
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              rows={2}
+              className={`${inputCls} resize-none`}
+              placeholder="Optional notes for this reconciliation..."
+            />
+          </div>
+
+          {/* Reconciliation Balance / Error */}
+          <div
+            className="flex items-center justify-between px-5 py-4 border-2 rounded-lg"
+            style={{ borderColor: isBalanced ? GREEN : RED, background: isBalanced ? "#e8f5ec" : "#fdecea" }}
+          >
+            <div className="flex items-center gap-2">
+              {isBalanced ? (
+                <FaCheckCircle size={16} style={{ color: GREEN }} />
+              ) : (
+                <FaExclamationTriangle size={16} style={{ color: RED }} />
+              )}
+              <span className="text-sm font-bold tracking-wide uppercase" style={{ color: isBalanced ? GREEN : RED }}>
+                {isBalanced ? "Reconciliation Balanced" : "Reconciliation Balance Error"}
+              </span>
+            </div>
+            <span className="font-mono text-lg font-bold" style={{ color: isBalanced ? GREEN : RED }}>
+              {isBalanced ? "₱0.00" : `₱${fmt(Math.abs(reconciliationDiff))}`}
+            </span>
+          </div>
+        </div>
+
+        {/* RIGHT — action rail */}
+        <div className="space-y-2.5 lg:col-span-1">
+          <RailButton icon={<FaTimes size={13} />} label="Cancel" hint="Esc" onClick={() => window.history.back()} />
+          <RailButton icon={<FaSync size={13} />} label="Recalculate Totals" hint="F2" onClick={handleRecalculate} disabled={loading} />
+          <RailButton icon={<FaSave size={13} />} label="Save and Print" hint="F3" onClick={() => handleSave(true)} disabled={saving} primary />
+          <RailButton icon={<FaSlidersH size={13} />} label="Transactions" hint="F4" onClick={openTxnModal} disabled={isReconciled} />
+          <RailButton icon={<FaCheckCircle size={13} />} label="OK" hint="F12" onClick={handleOk} disabled={saving || isReconciled} primary />
         </div>
       </div>
 
-      {/* ── NEW/EDIT RECONCILIATION FORM ── */}
-      {showRecForm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm">
-          <div className="w-full max-w-lg bg-white rounded-2xl shadow-2xl flex flex-col max-h-[92vh] overflow-hidden">
-            <div className="flex items-center justify-between px-6 py-4 bg-gradient-to-r from-indigo-700 to-blue-700 shrink-0">
-              <div>
-                <h2 className="text-sm font-bold text-white">
-                  {recForm.id ? 'Edit Reconciliation Record' : 'New Bank Reconciliation'}
-                </h2>
-                <p className="text-xs text-blue-200 mt-0.5">Enter bank and period details</p>
-              </div>
-              <button onClick={() => setShowRecForm(false)} className="text-xl transition text-white/60 hover:text-white">✕</button>
-            </div>
-
-            <div className="flex-1 px-6 py-5 space-y-4 overflow-y-auto">
-
-              {/* Client */}
-              <Field label="Client (Optional)">
-                <select value={recForm.client_id}
-                  onChange={e => {
-                    const c = clients.find(x => x.client_id === e.target.value);
-                    setRecForm(p => ({ ...p, client_id: e.target.value, client_name: c?.business_name || '' }));
-                  }}
-                  className={inputCls + ' cursor-pointer'}>
-                  <option value="">— Select Client —</option>
-                  {clients.map(c => <option key={c.client_id} value={c.client_id}>{c.business_name}</option>)}
-                </select>
-              </Field>
-
-              <div className="grid grid-cols-2 gap-4">
-                <Field label="Bank Name" required error={recErrors.bank_name}>
-                  <input value={recForm.bank_name} onChange={e => setRecForm(p=>({...p,bank_name:e.target.value}))}
-                    placeholder="BDO, BPI, Metrobank..." className={inputCls} />
-                </Field>
-                <Field label="Account Number">
-                  <input value={recForm.account_no} onChange={e => setRecForm(p=>({...p,account_no:e.target.value}))}
-                    placeholder="xxxx-xxxx-xx" className={inputCls} />
-                </Field>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <Field label="Month">
-                  <select value={recForm.month} onChange={e => setRecForm(p=>({...p,month:Number(e.target.value)}))}
-                    className={inputCls + ' cursor-pointer'}>
-                    {MONTHS.map((m,i) => <option key={i} value={i+1}>{m}</option>)}
-                  </select>
-                </Field>
-                <Field label="Year">
-                  <input type="number" value={recForm.year} onChange={e => setRecForm(p=>({...p,year:Number(e.target.value)}))}
-                    placeholder="2025" className={inputCls} />
-                </Field>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <Field label="Beginning Balance (₱)" required error={recErrors.beginning_balance}>
-                  <input value={recForm.beginning_balance} onChange={e => setRecForm(p=>({...p,beginning_balance:e.target.value}))}
-                    placeholder="0.00" className={inputCls} />
-                </Field>
-                <Field label="Bank Statement Balance (₱)" required error={recErrors.bank_statement_balance}>
-                  <input value={recForm.bank_statement_balance} onChange={e => setRecForm(p=>({...p,bank_statement_balance:e.target.value}))}
-                    placeholder="0.00" className={inputCls} />
-                </Field>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <Field label="Deposits Not Yet Posted (₱)">
-                  <input value={recForm.total_deposits_not_posted} onChange={e => setRecForm(p=>({...p,total_deposits_not_posted:e.target.value}))}
-                    placeholder="0.00" className={inputCls} />
-                </Field>
-                <Field label="Adjustments (₱)">
-                  <input value={recForm.adjustments} onChange={e => setRecForm(p=>({...p,adjustments:e.target.value}))}
-                    placeholder="0.00" className={inputCls} />
-                </Field>
-              </div>
-
-              <Field label="Notes">
-                <textarea value={recForm.notes} onChange={e => setRecForm(p=>({...p,notes:e.target.value}))}
-                  rows={2} placeholder="Additional notes..." className={inputCls + ' resize-none'} />
-              </Field>
-            </div>
-
-            <div className="flex gap-2 px-6 py-4 border-t border-slate-100 shrink-0">
-              <button onClick={() => setShowRecForm(false)}
-                className="flex-1 py-2.5 text-sm font-semibold rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 transition">
-                Cancel
-              </button>
-              <button onClick={handleSaveRec} disabled={savingRec}
-                className="flex-1 py-2.5 text-sm font-semibold rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white transition disabled:opacity-50">
-                {savingRec ? 'Saving...' : recForm.id ? 'Save Changes' : 'Create Record'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ── TRANSACTION MODAL ── */}
-      {txnModal && (
-        <TransactionModal
-          mode={txnModal.mode}
-          txn={txnModal.txn}
-          onClose={() => setTxnModal(null)}
-          onSave={handleSaveTxn}
-        />
-      )}
-
-      {/* ── RECONCILIATION SHEET MODAL ── */}
-      {sheetOpen && activeRec && (
-        <ReconciliationSheet
-          rec={activeRec}
-          transactions={transactions}
-          onClose={() => setSheetOpen(false)}
+      {showTxnModal && (
+        <TransactionsModal
+          rows={txnDraft}
+          onAdd={() =>
+            setTxnDraft((r) => [
+              ...r,
+              { _key: Math.random(), date: today(), description: "", type: "Deposit", reference_no: "", amount: "", is_outstanding: false },
+            ])
+          }
+          onRemove={removeTxnRow}
+          onChange={updateTxnRow}
+          onClose={() => setShowTxnModal(false)}
+          onSave={saveTxnModal}
+          saving={saving}
+          syncing={syncingTxns}
+          onRefreshSync={() => refreshSyncedDeposits(txnDraft)}
+          syncAvailable={syncAvailable}
         />
       )}
     </div>
+  );
+}
+
+// ── Right-rail button ──
+function RailButton({ icon, label, hint, onClick, disabled, primary }) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg border text-left transition disabled:opacity-50 ${
+        primary ? "text-white" : "text-gray-700 bg-white hover:bg-gray-50"
+      }`}
+      style={primary ? { background: GREEN, borderColor: GREEN } : { borderColor: "#e5e7eb" }}
+    >
+      <span className={primary ? "text-white" : "text-gray-400"}>{icon}</span>
+      <span className="flex-1 text-sm font-medium">{label}</span>
+      <span className={`text-[10px] font-mono ${primary ? "text-white/70" : "text-gray-300"}`}>{hint}</span>
+    </button>
   );
 }

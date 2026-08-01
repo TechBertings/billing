@@ -18,7 +18,9 @@ import {
     FaUserShield,
     FaTools,
     FaUser,
-    FaClipboardCheck
+    FaClipboardCheck,
+    FaExclamationTriangle,
+    FaChartLine
 } from 'react-icons/fa';
 import ReactDOM from 'react-dom';
 import Swal from 'sweetalert2';
@@ -50,13 +52,25 @@ export const getAllMenuItems = () => [
         path: 'accounting-management',
         category: 'Portals',
         submenu: [
-          //  { icon: <FaChartBar />, label: 'Account Summary', path: 'account-summary' },
-          //  { icon: <FaHistory />, label: 'Bank Reconciliation', path: 'BankReconciliation' },
-            { icon: <FaFileInvoiceDollar />, label: 'Create Billing', path: 'CreateBilling' },
-          //  { icon: <FaCreditCard />, label: 'Record Payment', path: 'RecordPayment' },
+             { icon: <FaChartBar />, label: 'Account Summary', path: 'StatementOfAccountSummary' },
+           { icon: <FaHistory />, label: 'Bank Reconciliation', path: 'BankReconciliation' },
+              { icon: <FaFileAlt />, label: 'Chart of Accounts', path: 'ChartOfAccounts' },
+               { icon: <FaFileInvoiceDollar />, label: 'Create Billing', path: 'CreateBilling' },
+           { icon: <FaClipboardList />, label: 'Receivables List', path: 'ReceivablesList' }, 
+             { icon: <FaCreditCard />, label: 'Record Payment', path: 'RecordPayment' },
           //  { icon: <FaMoneyBillWave />, label: 'Remittances', path: 'remittances' },
-            { icon: <FaFileAlt />, label: 'Chart of Accounts', path: 'ChartOfAccounts' },
+        
             
+        ]
+    },
+    {
+       icon: <FaChartBar />,
+        label: 'Reports',
+        path: 'reports',
+        category: 'Portals',
+        submenu: [{ icon: <FaExclamationTriangle />, label: 'Collections & Receivables', path: 'ARAgingReport' },
+            { icon: <FaChartLine />, label: 'Financial Reports', path: 'FinancialReports' },
+            { icon: <FaFileAlt />, label: 'Transmittal Report', path: 'TransmittalReport' },
         ]
     },
   /*  {

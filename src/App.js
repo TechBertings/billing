@@ -13,11 +13,17 @@ import EmployeeProfile from './page/ClientManagement/employee_profile';
 import BillingInformation from './page/ClientManagement/billing_information';
 import CreateBilling from './page/AccountingManagement/create_billing';
 import RecordPayment from './page/AccountingManagement/record_payment';
+import StatementOfAccountSummary from './page/AccountingManagement/statement_of_account_summary';
 import FinanceDashboard from './page/finance_dashboard';
 import JobOrder from './page/ClientManagement/job_order';
 import BankReconciliation from './page/AccountingManagement/bank_reconciliation';
 import ChartOfAccounts from './page/AccountingManagement/chart_of_accounts';
 import SOAApproval from './page/Approval/statement_of_account_approval';
+import ARAgingReport from './page/Reports/aging_reports';
+import FinancialReports from './page/Reports/financial_reports';
+import TransmittalReport from './page/Reports/document_management_transmittal_report';
+import ReceivablesList from './page/AccountingManagement/receivable_list';
+
 
 // ── Roles allowed to approve & send SOAs ──
 export const APPROVER_ROLES = ['Admin', 'Manager', 'Supervisor'];
@@ -46,6 +52,8 @@ function App() {
     const saved = localStorage.getItem('currentPage');
     return saved || 'dashboard';
   });
+const [preselectedClient, setPreselectedClient] = useState(null);
+const [preselectedBillingId, setPreselectedBillingId] = useState(null);
 
   useEffect(() => { localStorage.setItem('isLoggedIn', isLoggedIn); }, [isLoggedIn]);
   useEffect(() => { localStorage.setItem('currentUser', JSON.stringify(currentUser)); }, [currentUser]);
@@ -125,8 +133,32 @@ function App() {
       case 'ClientApproval':     return <ClientApproval currentUser={currentUser} />;
       case 'SOAApproval':        return <SOAApproval currentUser={currentUser} />;
       case 'EmployeeProfile':    return <EmployeeProfile />;
-      case 'RecordPayment':      return <RecordPayment />;
       case 'BillingInformation': return <BillingInformation />;
+      case 'StatementOfAccountSummary': return <StatementOfAccountSummary />;
+      case 'ARAgingReport':      return <ARAgingReport />;
+      case 'FinancialReports':   return <FinancialReports />;
+case 'TransmittalReport':
+  return <TransmittalReport currentUser={currentUser} />;
+      case 'ReceivablesList':
+        return <ReceivablesList
+          onSelectInvoice={(client, clientId, billingId) => {
+            setPreselectedClient(client);
+            setPreselectedBillingId(billingId);
+            handleNavigation('RecordPayment');
+          }}
+        />;
+
+           case 'RecordPayment':
+            return <RecordPayment
+              currentUser={currentUser}
+              onClose={() => handleNavigation('ReceivablesList')}
+              onSaved={() => {
+                setPreselectedClient(null);
+                setPreselectedBillingId(null);
+              }}
+              preselectedClient={preselectedClient}
+              preselectedBillingId={preselectedBillingId}
+            />;
 
       // ── Pass currentUser so CreateBilling knows the role ──
       case 'CreateBilling':

@@ -12,10 +12,11 @@ import TaxPayerClassification from "../../Maintenance/tax_payer_classification";
 import VatType                from "../../Maintenance/vat_type";
 import SalaryBracket          from "../../Maintenance/salary_bracket";
 import Account                from "../../Maintenance/account";
-import GovernmentAgency       from "../../Maintenance/government_agency"; 
+import BatchBilling            from "../../Maintenance/batch_billing"; 
 import Period                 from "../../Maintenance/period";
 import RentFees                from "../../Maintenance/rent_fees";
 import ContributionRates       from "../../Maintenance/contribution_rates"; // ← new
+import TaxSetup                from "../../Maintenance/tax_setup";  
 
 const Maintenance = () => {
   const [selectedModule, setSelectedModule] = useState(null);
@@ -34,10 +35,12 @@ const Maintenance = () => {
     { id: "VatType",                 name: "VAT Type",                  description: "Manage VAT types",                                icon: HelpCircle },
     { id: "SalaryBracket",           name: "Salary Bracket",            description: "Manage salary brackets",                          icon: HelpCircle },
     { id: "Account",                 name: "Account",                   description: "Manage user accounts",                            icon: HelpCircle },
-    { id: "GovernmentAgency",        name: "Government Agency",         description: "Manage agencies used in Chart of Accounts tabs",  icon: Building2  }, 
+    { id: "BatchBilling",            name: "BatchBilling",         description: "Manage agencies used in Chart of Accounts tabs",  icon: Building2  }, 
     { id: "Period",                  name: "Period",                    description: "Date period",                                      icon: Building2 },
     { id: "RentFees",                name: "Rent Fees",                 description: "Manage rental term schedules (Net of VAT, VAT, WTAX per year)", icon: Home },
     { id: "ContributionRates",       name: "Contribution Rates",        description: "Manage SSS, PhilHealth, and Pag-IBIG rate schedules", icon: Landmark }, // ← new
+    { id: "TaxSetup",                name: "Tax Setup",                 description: "Manage per-client tax rates and amounts",         icon: Landmark }, // ← new
+
   ];
 
   const filteredModules = sortBy === "all" ? modules : modules.filter(m => m.id === sortBy);
@@ -59,10 +62,11 @@ const Maintenance = () => {
       case "VatType":                return <VatType />;
       case "SalaryBracket":          return <SalaryBracket />;
       case "Account":                return <Account />;
-      case "GovernmentAgency":       return <GovernmentAgency />;  
+      case "BatchBilling":           return <BatchBilling />;  
       case "Period":                 return <Period />;
       case "RentFees":               return <RentFees />;
       case "ContributionRates":      return <ContributionRates />; // ← new
+      case "TaxSetup":                return <TaxSetup />; // ← new
       default:                       return null;
     }
   };

@@ -1,8 +1,20 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { createPortal } from "react-dom";
 import { supabase } from "../../lib/supabaseClient";
-import { FaSearch, FaTimes, FaPlus, FaTrash, FaPrint, FaSave, FaChevronDown,
-        FaUser, FaCheckCircle, FaEnvelope, FaClock, FaExclamationTriangle,  } from "react-icons/fa";
+import {
+  FaSearch,
+  FaTimes,
+  FaPlus,
+  FaTrash,
+  FaPrint,
+  FaSave,
+  FaChevronDown,
+  FaUser,
+  FaCheckCircle,
+  FaEnvelope,
+  FaClock,
+  FaExclamationTriangle,
+} from "react-icons/fa";
 import { LOGO_B64 } from "../../logo_b64";
 import { useApprovalPermission } from "../../hooks/approval_permission";
 
@@ -21,6 +33,16 @@ function fmtMonthYear(ym) {
   const d = new Date(Number(y), Number(m) - 1, 1);
   return d.toLocaleDateString("en-PH", { year: "numeric", month: "long" });
 }
+function fmtFullDate(dateStr) {
+  if (!dateStr) return "";
+  const d = new Date(dateStr);
+  if (isNaN(d)) return dateStr;
+  return d.toLocaleDateString("en-PH", {
+    year: "numeric",
+    month: "short",
+    day: "2-digit",
+  });
+}
 
 function newRow() {
   return {
@@ -36,8 +58,7 @@ function newRow() {
 const generateSOANumber = async () => {
   const now = new Date();
   const yr = now.getFullYear();
-  const mo = String(now.getMonth() + 1).padStart(2, "0");
-  const prefix = `FBMEC-${yr}${mo}-`;
+  const prefix = `SOA-${yr}-`;
   const { data } = await supabase
     .from("billing_statements")
     .select("soa_number")
@@ -45,7 +66,7 @@ const generateSOANumber = async () => {
     .order("soa_number", { ascending: false })
     .limit(1);
   const last = data?.[0]?.soa_number?.split("-").pop();
-  const next = String((parseInt(last) || 0) + 1).padStart(4, "0");
+  const next = String((parseInt(last) || 0) + 1).padStart(5, "0");
   return `${prefix}${next}`;
 };
 
@@ -60,6 +81,7 @@ function buildSOAEmailHTML({
   soaDate,
   dueDate,
   items,
+  scheduleAccounts = [],
   subtotal,
   downPayment,
   withholdingTax,
@@ -115,6 +137,42 @@ function buildSOAEmailHTML({
       ${i === 0 ? watermarkCell : ""}
     </tr>`,
     )
+    .join("");
+
+  const scheduleBlocksHTML = (scheduleAccounts || [])
+    .map((acc) => {
+      const rows = (acc.details || [])
+        .map(
+          (d) => `
+      <tr style="border-bottom:1px solid #eee;">
+        <td style="padding:4px 8px;font-weight:700;">${d.year}</td>
+        <td style="padding:4px 8px;color:#555;">${fmtDate(d.period_start)} – ${fmtDate(d.period_end)}</td>
+        <td style="padding:4px 8px;text-align:right;font-family:monospace;">${fmtN(d.net_of_vat)}</td>
+        <td style="padding:4px 8px;text-align:right;font-family:monospace;">${fmtN(d.vat)}</td>
+        <td style="padding:4px 8px;text-align:right;font-family:monospace;">${fmtN(d.wtax)}</td>
+      </tr>`,
+        )
+        .join("");
+
+      return `
+    <div style="padding:10px 20px;border-bottom:1px solid #f0f0f0;">
+      <div style="font-weight:700;font-size:10px;color:${green};margin-bottom:6px;">
+        ${acc.description} <span style="font-weight:400;color:#888;font-size:8.5px;">(${acc.rf_code})</span>
+      </div>
+      <table style="width:100%;border-collapse:collapse;font-size:8.5px;">
+        <thead>
+          <tr style="background:#f4faf6;">
+            <th style="padding:4px 8px;text-align:left;color:${green};">Year</th>
+            <th style="padding:4px 8px;text-align:left;color:${green};">Period</th>
+            <th style="padding:4px 8px;text-align:right;color:${green};">Net of VAT</th>
+            <th style="padding:4px 8px;text-align:right;color:${green};">VAT</th>
+            <th style="padding:4px 8px;text-align:right;color:${green};">WTAX</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`;
+    })
     .join("");
 
   // ── SOA info rows — SYNCED: tradeName as separate row (italic, gray), same as preview ──
@@ -222,6 +280,8 @@ function buildSOAEmailHTML({
       ${itemRows}
     </tbody>
   </table>
+
+   ${scheduleBlocksHTML}
 
   <!-- ── FOOTER: 3-col (synced with preview grid grid-cols-3) ── -->
   <table width="100%" cellpadding="0" cellspacing="0" style="border-top:2px solid ${green};">
@@ -408,10 +468,6 @@ export default function CreateBilling({ currentUser }) {
   const [coaDropPos, setCoaDropPos] = useState({ top: 0, left: 0, width: 0 });
   const coaPortalRef = useRef(null);
 
-  // ── Add-row dropdown ──
-  const [showAddDrop, setShowAddDrop] = useState(false);
-  const addDropRef = useRef(null);
-
   // ── Save dropdown ──
   const [showSaveDrop, setShowSaveDrop] = useState(false);
   const saveDropRef = useRef(null);
@@ -430,6 +486,7 @@ export default function CreateBilling({ currentUser }) {
   const [dueDate, setDueDate] = useState(() =>
     addDays(new Date().toISOString().split("T")[0], 15),
   );
+  const [dueDateTouched, setDueDateTouched] = useState(false);
   const [billTo, setBillTo] = useState("");
   const [address, setAddress] = useState("");
   const [notes, setNotes] = useState(
@@ -440,7 +497,7 @@ export default function CreateBilling({ currentUser }) {
   const [items, setItems] = useState([newRow()]);
   const [soaStatus, setSoaStatus] = useState("draft");
   const [savedBillingId, setSavedBillingId] = useState(null);
-
+  const [scheduleAccounts, setScheduleAccounts] = useState([]);
   // ── UI ──
   const [saving, setSaving] = useState(false);
   const [approving, setApproving] = useState(false);
@@ -448,7 +505,7 @@ export default function CreateBilling({ currentUser }) {
   const [messageType, setMessageType] = useState("");
   const [showPrint, setShowPrint] = useState(false);
   const [savedBilling, setSavedBilling] = useState(null);
-
+  const skipSearchRef = useRef(false);
   const { canApprove: isApprover } = useApprovalPermission(
     currentUser,
     "SOAApproval",
@@ -467,8 +524,6 @@ export default function CreateBilling({ currentUser }) {
     const handler = (e) => {
       if (clientRef.current && !clientRef.current.contains(e.target))
         setShowClientDrop(false);
-      if (addDropRef.current && !addDropRef.current.contains(e.target))
-        setShowAddDrop(false);
       if (saveDropRef.current && !saveDropRef.current.contains(e.target))
         setShowSaveDrop(false);
       if (coaPortalRef.current && !coaPortalRef.current.contains(e.target)) {
@@ -511,6 +566,10 @@ export default function CreateBilling({ currentUser }) {
   }, []);
 
   useEffect(() => {
+    if (skipSearchRef.current) {
+      skipSearchRef.current = false;
+      return;
+    }
     if (!clientSearch.trim()) return;
     const t = setTimeout(() => searchApprovedClients(clientSearch), 300);
     return () => clearTimeout(t);
@@ -524,13 +583,64 @@ export default function CreateBilling({ currentUser }) {
     );
   };
 
-  const selectClient = (c) => {
+  const selectClient = async (c) => {
+    skipSearchRef.current = true;
     setSelectedClient(c);
     setBillTo(getClientPrimaryName(c));
     setAddress(c.registered_business_address || "");
     setClientSearch(getClientPrimaryName(c));
     setShowClientDrop(false);
     setClientResults([]);
+
+    const { data: feeItems, error } = await supabase
+      .from("fee_items")
+      .select(
+        "amount, item_name, agency_id, coa_id, rent_fee_id, chart_of_accounts(code, account_name, billing_mode), government_agencies(name), rent_fees(rf_code, rent_fee_details(*))",
+      )
+      .eq("client_id", c.id)
+      .eq("is_active", true)
+      .eq("chart_of_accounts.is_active", true);
+
+    if (!error && feeItems && feeItems.length > 0) {
+      const flatRows = [];
+      const scheduleRows = [];
+
+      feeItems.forEach((fi) => {
+        const code = fi.chart_of_accounts?.code || "";
+        const agencyName = fi.government_agencies?.name || "";
+        const accountName =
+          fi.chart_of_accounts?.account_name || fi.item_name || "";
+        const isSchedule = fi.chart_of_accounts?.billing_mode === "schedule";
+
+        if (isSchedule && fi.rent_fees) {
+          const details = (fi.rent_fees.rent_fee_details || [])
+            .slice()
+            .sort((a, b) => a.year - b.year);
+          scheduleRows.push({
+            account_code: code,
+            agency: agencyName,
+            description: accountName,
+            rf_code: fi.rent_fees.rf_code,
+            details,
+          });
+        } else {
+          flatRows.push({
+            id: Date.now() + Math.random(),
+            account_code: code,
+            agency: agencyName,
+            description: accountName,
+            period_covered: "",
+            amount: fi.amount ?? "",
+          });
+        }
+      });
+
+      setItems(flatRows.length ? flatRows : [newRow()]);
+      setScheduleAccounts(scheduleRows);
+    } else {
+      setItems([newRow()]);
+      setScheduleAccounts([]);
+    }
   };
 
   const clearClient = () => {
@@ -638,13 +748,22 @@ export default function CreateBilling({ currentUser }) {
       const n = p.filter((i) => i.id !== id);
       return n.length === 0 ? [newRow()] : n;
     });
-  const addRows = (count) => {
-    setItems((p) => [...p, ...Array.from({ length: count }, newRow)]);
-    setShowAddDrop(false);
-  };
 
   // ── Totals ──
-  const subtotal = items.reduce((s, i) => s + (parseFloat(i.amount) || 0), 0);
+  // ── Totals ──
+  const scheduleTotal = scheduleAccounts.reduce((sum, acc) => {
+    const accTotal = acc.details.reduce(
+      (s, d) =>
+        s +
+        (parseFloat(d.net_of_vat) || 0) +
+        (parseFloat(d.vat) || 0) -
+        (parseFloat(d.wtax) || 0),
+      0,
+    );
+    return sum + accTotal;
+  }, 0);
+  const subtotal =
+    items.reduce((s, i) => s + (parseFloat(i.amount) || 0), 0) + scheduleTotal;
   const dp = parseFloat(downPayment) || 0;
   const whtPercent = parseFloat(withholdingTax) || 0;
   const wht = subtotal * (whtPercent / 100);
@@ -685,6 +804,7 @@ export default function CreateBilling({ currentUser }) {
     soaDate,
     dueDate,
     items: filledItems ?? items.filter((i) => i.description || i.amount),
+    scheduleAccounts,
     subtotal,
     dp,
     wht,
@@ -849,6 +969,7 @@ export default function CreateBilling({ currentUser }) {
         soaDate,
         dueDate,
         items: filledItems,
+        scheduleAccounts,
         subtotal,
         downPayment: dp,
         withholdingTax: wht,
@@ -944,6 +1065,7 @@ export default function CreateBilling({ currentUser }) {
     setDownPayment("");
     setWithholdingTax("");
     setItems([newRow()]);
+    setScheduleAccounts([]);
     setSoaStatus("draft");
     setSavedBillingId(null);
     setNotes(
@@ -1281,7 +1403,7 @@ export default function CreateBilling({ currentUser }) {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-gray-100">
-                  <th className="px-4 py-2.5 text-left text-[11px] font-semibold text-gray-400 w-20">
+                  <th className="px-4 py-2.5 text-left text-[11px] font-semibold text-gray-400 w-28">
                     Code
                   </th>
                   <th className="px-4 py-2.5 text-left text-[11px] font-semibold text-gray-400 w-56">
@@ -1305,24 +1427,24 @@ export default function CreateBilling({ currentUser }) {
                     key={item.id}
                     className="relative transition group hover:bg-gray-50/50"
                   >
+                    {/* CODE — disabled, no more truncation */}
                     <td className="px-3 py-2">
                       <input
                         type="text"
                         value={item.account_code}
-                        onChange={(e) =>
-                          updateItem(item.id, "account_code", e.target.value)
-                        }
-                        placeholder="001"
-                        className="w-full px-2 py-1.5 text-xs border border-transparent rounded focus:border-blue-300 focus:outline-none focus:bg-white bg-transparent transition"
+                        readOnly
+                        disabled
+                        placeholder="—"
+                        className="w-full px-2 py-1.5 text-xs border border-transparent rounded bg-gray-50 text-gray-500 cursor-not-allowed whitespace-nowrap"
                       />
                     </td>
+
+                    {/* AGENCY — disabled */}
                     <td className="px-3 py-2">
                       <select
                         value={item.agency}
-                        onChange={(e) =>
-                          updateItem(item.id, "agency", e.target.value)
-                        }
-                        className="w-full px-2 py-1.5 text-xs border border-transparent rounded focus:border-blue-300 focus:outline-none focus:bg-white bg-transparent transition cursor-pointer"
+                        disabled
+                        className="w-full px-2 py-1.5 text-xs border border-transparent rounded bg-gray-50 text-gray-500 cursor-not-allowed"
                       >
                         <option value="">Select agency...</option>
                         {agencies.map((a) => (
@@ -1332,33 +1454,16 @@ export default function CreateBilling({ currentUser }) {
                         ))}
                       </select>
                     </td>
+
+                    {/* DESCRIPTION — disabled, no more COA portal trigger */}
                     <td className="px-3 py-2">
-                      <div
-                        onClick={(e) =>
-                          item.agency && openCoaForRow(item.id, e)
-                        }
-                        className={`w-full px-2 py-1.5 text-xs border border-transparent rounded flex items-center justify-between transition
-        ${item.agency ? "hover:border-blue-200 hover:bg-white cursor-pointer" : "cursor-not-allowed"}`}
-                      >
-                        <span
-                          className={
-                            item.description ? "text-gray-700" : "text-gray-300"
-                          }
-                        >
-                          {item.description ||
-                            (item.agency
-                              ? "Select account..."
-                              : "Select agency first")}
-                        </span>
-                        {item.agency && (
-                          <FaChevronDown
-                            size={8}
-                            className="ml-1 text-gray-300 shrink-0"
-                          />
-                        )}
+                      <div className="w-full px-2 py-1.5 text-xs border border-transparent rounded flex items-center justify-between bg-gray-50 text-gray-500 cursor-not-allowed">
+                        <span>{item.description || "—"}</span>
                       </div>
                     </td>
-              <td className="px-3 py-2">
+
+                    {/* PERIOD — the ONLY editable field */}
+                    <td className="px-3 py-2">
                       <input
                         type="month"
                         value={item.period_covered}
@@ -1368,19 +1473,19 @@ export default function CreateBilling({ currentUser }) {
                         className="w-full px-2 py-1.5 text-xs border border-transparent rounded focus:border-blue-300 focus:outline-none focus:bg-white bg-transparent transition cursor-pointer"
                       />
                     </td>
+
+                    {/* AMOUNT — disabled */}
                     <td className="px-3 py-2">
                       <input
                         type="number"
                         value={item.amount}
-                        onChange={(e) =>
-                          updateItem(item.id, "amount", e.target.value)
-                        }
+                        readOnly
+                        disabled
                         placeholder="0.00"
-                        min="0"
-                        step="0.01"
-                        className="w-full px-2 py-1.5 text-xs text-right border border-transparent rounded focus:border-blue-300 focus:outline-none focus:bg-white bg-transparent font-mono transition"
+                        className="w-full px-2 py-1.5 text-xs text-right border border-transparent rounded bg-gray-50 text-gray-500 cursor-not-allowed font-mono"
                       />
                     </td>
+
                     <td className="px-2 py-2">
                       <button
                         onClick={() => removeItem(item.id)}
@@ -1467,40 +1572,68 @@ export default function CreateBilling({ currentUser }) {
               document.body,
             )}
 
-          {/* ADD ROW */}
-          <div
-            className="flex items-center gap-2 px-4 py-3 border-t border-gray-50"
-            ref={addDropRef}
-          >
-            <button
-              onClick={() => addRows(1)}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-gray-200 text-gray-600 hover:border-blue-300 hover:text-blue-600 rounded-md transition"
-            >
-              <FaPlus size={9} /> Add row
-            </button>
-            <div className="relative">
-              <button
-                onClick={() => setShowAddDrop((v) => !v)}
-                className="flex items-center px-2 py-1.5 text-xs font-medium border border-gray-200 text-gray-500 hover:border-blue-300 hover:text-blue-600 rounded-md transition"
-              >
-                <FaChevronDown size={9} />
-              </button>
-              {showAddDrop && (
-                <div className="absolute left-0 z-20 mt-1 overflow-hidden bg-white border border-gray-200 rounded-lg shadow-lg top-full w-36">
-                  {[5, 10, 20].map((n) => (
-                    <button
-                      key={n}
-                      onClick={() => addRows(n)}
-                      className="w-full px-4 py-2 text-sm text-left text-gray-700 transition hover:bg-gray-50"
-                    >
-                      Add {n} rows
-                    </button>
-                  ))}
+          {scheduleAccounts.length > 0 && (
+            <div className="border-t border-gray-100">
+              {scheduleAccounts.map((acc, idx) => (
+                <div
+                  key={idx}
+                  className="px-5 py-4 border-b border-gray-50 last:border-0"
+                >
+                  <p className="mb-2 text-sm font-semibold text-gray-800">
+                    {acc.description}{" "}
+                    <span className="ml-1 text-xs font-normal text-gray-400">
+                      ({acc.rf_code})
+                    </span>
+                  </p>
+                  <div className="overflow-hidden border border-gray-200 rounded-lg">
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="text-gray-400 bg-gray-50">
+                          <th className="px-3 py-1.5 text-left font-semibold">
+                            Year
+                          </th>
+                          <th className="px-3 py-1.5 text-left font-semibold">
+                            Period
+                          </th>
+                          <th className="px-3 py-1.5 text-right font-semibold">
+                            Net of VAT
+                          </th>
+                          <th className="px-3 py-1.5 text-right font-semibold">
+                            VAT
+                          </th>
+                          <th className="px-3 py-1.5 text-right font-semibold">
+                            WTAX
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {acc.details.map((d, i) => (
+                          <tr key={i} className="border-t border-gray-100">
+                            <td className="px-3 py-1.5 font-bold text-gray-700">
+                              {d.year}
+                            </td>
+                            <td className="px-3 py-1.5 text-gray-600">
+                              {fmtFullDate(d.period_start)} –{" "}
+                              {fmtFullDate(d.period_end)}
+                            </td>
+                            <td className="px-3 py-1.5 font-mono text-right">
+                              {fmt(d.net_of_vat)}
+                            </td>
+                            <td className="px-3 py-1.5 font-mono text-right">
+                              {fmt(d.vat)}
+                            </td>
+                            <td className="px-3 py-1.5 font-mono text-right">
+                              {fmt(d.wtax)}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
-              )}
+              ))}
             </div>
-          </div>
-
+          )}
           {/* TOTALS */}
           <div className="px-5 py-4 border-t border-gray-100">
             <div className="flex justify-end">
@@ -1960,7 +2093,7 @@ export default function CreateBilling({ currentUser }) {
                             >
                               {item?.description || ""}
                             </td>
-<td
+                            <td
                               style={{
                                 padding: "7px 12px",
                                 color: "#555",
@@ -1985,7 +2118,150 @@ export default function CreateBilling({ currentUser }) {
                     </tbody>
                   </table>
                 </div>
-
+                {savedBilling.scheduleAccounts &&
+                  savedBilling.scheduleAccounts.length > 0 && (
+                    <div style={{ borderTop: "1px solid #e0ede5" }}>
+                      {savedBilling.scheduleAccounts.map((acc, idx) => (
+                        <div
+                          key={idx}
+                          style={{
+                            padding: "10px 20px",
+                            borderBottom: "1px solid #f0f0f0",
+                          }}
+                        >
+                          <div
+                            style={{
+                              fontWeight: 700,
+                              fontSize: 10,
+                              color: "#1a5c2e",
+                              marginBottom: 6,
+                            }}
+                          >
+                            {acc.description}{" "}
+                            <span
+                              style={{
+                                fontWeight: 400,
+                                color: "#888",
+                                fontSize: 8.5,
+                              }}
+                            >
+                              ({acc.rf_code})
+                            </span>
+                          </div>
+                          <table
+                            style={{
+                              width: "100%",
+                              borderCollapse: "collapse",
+                              fontSize: 8.5,
+                            }}
+                          >
+                            <thead>
+                              <tr style={{ background: "#f4faf6" }}>
+                                <th
+                                  style={{
+                                    padding: "4px 8px",
+                                    textAlign: "left",
+                                    color: "#1a5c2e",
+                                  }}
+                                >
+                                  Year
+                                </th>
+                                <th
+                                  style={{
+                                    padding: "4px 8px",
+                                    textAlign: "left",
+                                    color: "#1a5c2e",
+                                  }}
+                                >
+                                  Period
+                                </th>
+                                <th
+                                  style={{
+                                    padding: "4px 8px",
+                                    textAlign: "right",
+                                    color: "#1a5c2e",
+                                  }}
+                                >
+                                  Net of VAT
+                                </th>
+                                <th
+                                  style={{
+                                    padding: "4px 8px",
+                                    textAlign: "right",
+                                    color: "#1a5c2e",
+                                  }}
+                                >
+                                  VAT
+                                </th>
+                                <th
+                                  style={{
+                                    padding: "4px 8px",
+                                    textAlign: "right",
+                                    color: "#1a5c2e",
+                                  }}
+                                >
+                                  WTAX
+                                </th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {acc.details.map((d, i) => (
+                                <tr
+                                  key={i}
+                                  style={{ borderBottom: "1px solid #eee" }}
+                                >
+                                  <td
+                                    style={{
+                                      padding: "4px 8px",
+                                      fontWeight: 700,
+                                    }}
+                                  >
+                                    {d.year}
+                                  </td>
+                                  <td
+                                    style={{
+                                      padding: "4px 8px",
+                                      color: "#555",
+                                    }}
+                                  >
+                                    {fmtFullDate(d.period_start)} –{" "}
+                                    {fmtFullDate(d.period_end)}
+                                  </td>
+                                  <td
+                                    style={{
+                                      padding: "4px 8px",
+                                      textAlign: "right",
+                                      fontFamily: "monospace",
+                                    }}
+                                  >
+                                    {fmt(d.net_of_vat)}
+                                  </td>
+                                  <td
+                                    style={{
+                                      padding: "4px 8px",
+                                      textAlign: "right",
+                                      fontFamily: "monospace",
+                                    }}
+                                  >
+                                    {fmt(d.vat)}
+                                  </td>
+                                  <td
+                                    style={{
+                                      padding: "4px 8px",
+                                      textAlign: "right",
+                                      fontFamily: "monospace",
+                                    }}
+                                  >
+                                    {fmt(d.wtax)}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 {/* ── FOOTER ── */}
                 <div
                   className="grid grid-cols-3"
