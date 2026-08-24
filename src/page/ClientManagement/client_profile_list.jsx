@@ -86,8 +86,8 @@ const statusColor = s => ({
 }[s] || 'bg-slate-100 text-slate-500');
 
 const accountColor = a => ({
-  Summit:  'bg-sky-100 text-sky-700',
-  Horizon: 'bg-violet-100 text-violet-700',
+  Summit:  'bg-teal-100 text-teal-700',
+  Horizon: 'bg-emerald-100 text-emerald-700',
 }[a] || 'bg-slate-100 text-slate-500');
 
 // ─── FETCH ALL (bypass Supabase 1000-row limit) ───────────────────────────────
@@ -222,7 +222,7 @@ function exportPDF(groups, cols, filterDesc, sortLabel, groupLabel) {
     // ── Page header ───────────────────────────────────────────────────────
     const drawPageHeader = () => {
       // Thin top bar
-      doc.setFillColor(12, 84, 185);
+      doc.setFillColor(15, 96, 90);
       doc.rect(0, 0, pageW, 34, 'F');
 
       // Logo
@@ -264,7 +264,7 @@ function exportPDF(groups, cols, filterDesc, sortLabel, groupLabel) {
 
     // ── Table column headers (wrapped to prevent overlap) ─────────────────
     const drawTableHead = (y) => {
-      doc.setFillColor(12, 84, 185);
+      doc.setFillColor(15, 96, 90);
       doc.rect(mL, y, usableW, HEAD_H, 'F');
       doc.setTextColor(255, 255, 255);
       doc.setFontSize(5.8); doc.setFont('helvetica', 'bold');
@@ -313,7 +313,7 @@ function exportPDF(groups, cols, filterDesc, sortLabel, groupLabel) {
     // ── Data row ──────────────────────────────────────────────────────────
     const drawRow = (row, rowNum, y, isEven) => {
       if (isEven) {
-        doc.setFillColor(240, 246, 255);
+        doc.setFillColor(236, 247, 245);
         doc.rect(mL, y, usableW, ROW_H, 'F');
       }
       // Row bottom border
@@ -342,11 +342,11 @@ function exportPDF(groups, cols, filterDesc, sortLabel, groupLabel) {
 
     // ── Group section header ───────────────────────────────────────────────
     const drawGroupHeader = (label, count, y) => {
-      doc.setFillColor(220, 234, 255);
+      doc.setFillColor(214, 240, 235);
       doc.rect(mL, y, usableW, 15, 'F');
-      doc.setFillColor(12, 84, 185);
+      doc.setFillColor(15, 96, 90);
       doc.rect(mL, y, 3, 15, 'F');
-      doc.setTextColor(20, 60, 160);
+      doc.setTextColor(13, 79, 74);
       doc.setFontSize(7.5); doc.setFont('helvetica', 'bold');
       doc.text(label, mL + 8, y + 10.5);
       doc.setFont('helvetica', 'normal'); doc.setTextColor(100, 116, 139);
@@ -396,8 +396,8 @@ function exportPDF(groups, cols, filterDesc, sortLabel, groupLabel) {
 const Section = ({ icon: Icon, title, children }) => (
   <div className="mb-6">
     <div className="flex items-center gap-2 pb-2 mb-3 border-b border-slate-100">
-      <div className="flex items-center justify-center w-6 h-6 rounded-md bg-blue-50 shrink-0">
-        <Icon size={11} className="text-blue-600" />
+      <div className="flex items-center justify-center w-6 h-6 rounded-md bg-teal-50 shrink-0">
+        <Icon size={11} className="text-teal-700" />
       </div>
       <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">{title}</span>
     </div>
@@ -428,7 +428,7 @@ function Pagination({ currentPage, totalPages, onPageChange, pageSize, onPageSiz
       <div className="flex items-center gap-3 text-sm text-slate-500">
         <span>Rows per page:</span>
         <select value={pageSize} onChange={e => { onPageSizeChange(Number(e.target.value)); onPageChange(1); }}
-          className="px-2 py-1 text-xs bg-white border rounded-lg cursor-pointer border-slate-200 focus:outline-none focus:border-blue-400">
+          className="px-2 py-1 text-xs bg-white border rounded-lg cursor-pointer border-slate-200 focus:outline-none focus:border-teal-400">
           {PAGE_SIZE_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
         </select>
         <span className="text-xs">{from}–{to} of {totalRecords}</span>
@@ -455,7 +455,7 @@ function Pagination({ currentPage, totalPages, onPageChange, pageSize, onPageSiz
           <button key={p} onClick={() => onPageChange(p)}
             className={`w-8 h-8 text-xs rounded-lg font-medium transition ${
               p === currentPage
-                ? 'bg-blue-600 text-white shadow-sm'
+                ? 'bg-teal-700 text-white shadow-sm'
                 : 'text-slate-600 hover:bg-slate-100'
             }`}>
             {p}
@@ -595,7 +595,7 @@ export default function ClientProfileList() {
   if (loading) return (
     <div className="flex items-center justify-center min-h-screen bg-slate-50">
       <div className="text-center">
-        <div className="w-10 h-10 mx-auto mb-3 border-2 border-blue-600 rounded-full border-t-transparent animate-spin" />
+        <div className="w-10 h-10 mx-auto mb-3 border-2 border-teal-700 rounded-full border-t-transparent animate-spin" />
         <p className="text-sm text-slate-500">Loading all client records...</p>
       </div>
     </div>
@@ -611,16 +611,16 @@ export default function ClientProfileList() {
             <h1 className="text-base font-bold leading-tight text-slate-900">Client Masterlist</h1>
             <p className="text-xs text-slate-400">
               {filtered.length} of {clients.length} records · {filterDesc}
-              {fetching && <span className="ml-2 text-blue-400">⟳ refreshing...</span>}
+              {fetching && <span className="ml-2 text-teal-500">⟳ refreshing...</span>}
             </p>
           </div>
           <div className="flex items-center gap-2">
             <button onClick={fetchClients} disabled={fetching}
-              className="p-2 transition rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 disabled:opacity-40" title="Refresh">
+              className="p-2 transition rounded-lg text-slate-400 hover:text-teal-700 hover:bg-teal-50 disabled:opacity-40" title="Refresh">
               <FaSync size={12} className={fetching ? 'animate-spin' : ''} />
             </button>
             <button onClick={() => setShowExport(true)}
-              className="flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white transition rounded-lg shadow bg-gradient-to-r from-blue-600 to-indigo-600 hover:opacity-90 shadow-blue-400/30">
+              className="flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white transition rounded-lg shadow bg-gradient-to-r from-teal-700 to-emerald-600 hover:opacity-90 shadow-teal-400/30">
               Export ↓
             </button>
           </div>
@@ -645,8 +645,8 @@ export default function ClientProfileList() {
             { label: 'Total',    val: clients.length, cls: 'text-slate-800' },
             { label: 'Approved', val: clients.filter(c => c.approval_status === 'approved').length, cls: 'text-emerald-600' },
             { label: 'Pending',  val: clients.filter(c => c.approval_status === 'pending').length,  cls: 'text-amber-600' },
-            { label: 'Summit',   val: clients.filter(c => c.account === 'Summit').length,  cls: 'text-sky-600' },
-            { label: 'Horizon',  val: clients.filter(c => c.account === 'Horizon').length, cls: 'text-violet-600' },
+            { label: 'Summit',   val: clients.filter(c => c.account === 'Summit').length,  cls: 'text-teal-700' },
+            { label: 'Horizon',  val: clients.filter(c => c.account === 'Horizon').length, cls: 'text-emerald-600' },
           ].map(s => (
             <div key={s.label} className="px-4 py-3 bg-white border rounded-xl border-slate-200">
               <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide">{s.label}</p>
@@ -668,9 +668,9 @@ export default function ClientProfileList() {
                 className={`px-4 py-1.5 text-sm font-semibold rounded-md transition-all ${
                   filterAccount === tab
                     ? tab === 'Summit'
-                      ? 'bg-sky-600 text-white shadow-sm'
+                      ? 'bg-teal-700 text-white shadow-sm'
                       : tab === 'Horizon'
-                        ? 'bg-violet-600 text-white shadow-sm'
+                        ? 'bg-emerald-600 text-white shadow-sm'
                         : 'bg-white text-slate-800 shadow-sm'
                     : 'text-slate-500 hover:text-slate-700'
                 }`}
@@ -692,7 +692,7 @@ export default function ClientProfileList() {
               <FaSearch className="absolute -translate-y-1/2 left-3 top-1/2 text-slate-400" size={12} />
               <input type="text" value={searchTerm} onChange={e => setSearchTerm(e.target.value)}
                 placeholder="Search name, ID, TIN, email, contact..."
-                className="w-full py-2 pr-4 text-sm border rounded-lg pl-9 border-slate-200 focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-50" />
+                className="w-full py-2 pr-4 text-sm border rounded-lg pl-9 border-slate-200 focus:border-teal-400 focus:outline-none focus:ring-2 focus:ring-teal-50" />
               {searchTerm && (
                 <button onClick={() => setSearchTerm('')} className="absolute -translate-y-1/2 right-3 top-1/2 text-slate-400 hover:text-slate-600">
                   <FaTimes size={11} />
@@ -700,20 +700,20 @@ export default function ClientProfileList() {
               )}
             </div>
             <select value={sortVal} onChange={e => setSortVal(e.target.value)}
-              className="px-3 py-2 text-sm bg-white border rounded-lg cursor-pointer border-slate-200 text-slate-700 focus:border-blue-400 focus:outline-none">
+              className="px-3 py-2 text-sm bg-white border rounded-lg cursor-pointer border-slate-200 text-slate-700 focus:border-teal-400 focus:outline-none">
               {SORT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
             <select value={groupBy} onChange={e => setGroupBy(e.target.value)}
-              className="px-3 py-2 text-sm bg-white border rounded-lg cursor-pointer border-slate-200 text-slate-700 focus:border-blue-400 focus:outline-none">
+              className="px-3 py-2 text-sm bg-white border rounded-lg cursor-pointer border-slate-200 text-slate-700 focus:border-teal-400 focus:outline-none">
               {GROUP_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
             <button onClick={() => setShowFilters(f => !f)}
               className={`flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-lg border transition ${
-                activeFilterCount > 0 ? 'border-blue-400 bg-blue-50 text-blue-700' : 'border-slate-200 text-slate-600 hover:border-slate-300'
+                activeFilterCount > 0 ? 'border-teal-400 bg-teal-50 text-teal-700' : 'border-slate-200 text-slate-600 hover:border-slate-300'
               }`}>
               <FaFilter size={11} /> Filters
               {activeFilterCount > 0 && (
-                <span className="w-4 h-4 text-[10px] font-bold bg-blue-500 text-white rounded-full flex items-center justify-center">{activeFilterCount}</span>
+                <span className="w-4 h-4 text-[10px] font-bold bg-teal-600 text-white rounded-full flex items-center justify-center">{activeFilterCount}</span>
               )}
               {showFilters ? <FaChevronUp size={9} /> : <FaChevronDown size={9} />}
             </button>
@@ -730,7 +730,7 @@ export default function ClientProfileList() {
                 <div key={f.label}>
                   <label className="text-[10px] font-semibold uppercase tracking-wide text-slate-400 block mb-1">{f.label}</label>
                   <select value={f.val} onChange={e => f.set(e.target.value)}
-                    className="w-full px-2 py-1.5 text-xs border border-slate-200 rounded-lg bg-white focus:border-blue-400 focus:outline-none cursor-pointer">
+                    className="w-full px-2 py-1.5 text-xs border border-slate-200 rounded-lg bg-white focus:border-teal-400 focus:outline-none cursor-pointer">
                     {f.opts.map(o => <option key={o} value={o}>{o === 'all' ? 'All' : o}</option>)}
                   </select>
                 </div>
@@ -763,9 +763,9 @@ export default function ClientProfileList() {
                       <React.Fragment key={gi}>
                         {label && (
                           <tr>
-                            <td colSpan={11} className="px-4 py-2 border-blue-100 bg-blue-50/60 border-y">
-                              <span className="text-xs font-bold text-blue-700">{label}</span>
-                              <span className="ml-2 text-xs text-blue-400">({rows.length} on this page)</span>
+                            <td colSpan={11} className="px-4 py-2 border-teal-100 bg-teal-50/60 border-y">
+                              <span className="text-xs font-bold text-teal-700">{label}</span>
+                              <span className="ml-2 text-xs text-teal-400">({rows.length} on this page)</span>
                             </td>
                           </tr>
                         )}
@@ -774,7 +774,7 @@ export default function ClientProfileList() {
                             gi === 0 ? idx : groups.slice(0, gi).reduce((s, g) => s + g.rows.length, 0) + idx
                           );
                           return (
-                            <tr key={c.id} className="transition-colors border-b border-slate-100 hover:bg-blue-50/30 group">
+                            <tr key={c.id} className="transition-colors border-b border-slate-100 hover:bg-teal-50/30 group">
                               <td className="px-4 py-3 text-xs text-slate-300 tabular-nums">{globalIdx + 1}</td>
                               <td className="px-4 py-3">
                                 <span className="font-mono text-xs bg-slate-100 text-slate-500 px-2 py-0.5 rounded">{c.client_id}</span>
@@ -799,7 +799,7 @@ export default function ClientProfileList() {
                               <td className="px-4 py-3">
                                 <div className="flex items-center gap-1 transition-opacity opacity-0 group-hover:opacity-100">
                                   <button onClick={() => setSelectedClient(c)}
-                                    className="p-1.5 text-blue-500 hover:bg-blue-100 rounded-lg transition" title="View">
+                                    className="p-1.5 text-teal-600 hover:bg-teal-100 rounded-lg transition" title="View">
                                     <FaEye size={13} />
                                   </button>
                                   <button onClick={() => handleDelete(c.id)}
@@ -835,7 +835,7 @@ export default function ClientProfileList() {
       {selectedClient && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm">
           <div className="w-full max-w-2xl bg-white rounded-2xl shadow-2xl flex flex-col max-h-[88vh] overflow-hidden">
-            <div className="py-5 px-7 bg-gradient-to-r from-blue-700 to-indigo-700 rounded-t-2xl shrink-0">
+            <div className="py-5 px-7 bg-gradient-to-r from-teal-800 to-emerald-700 rounded-t-2xl shrink-0">
               <div className="flex items-start justify-between">
                 <div className="flex-1 min-w-0">
                   <div className="flex flex-wrap items-center gap-2 mb-2">
@@ -847,7 +847,7 @@ export default function ClientProfileList() {
                     )}
                   </div>
                   <h2 className="text-xl font-bold leading-tight text-white truncate">{selectedClient.business_name || 'Client Details'}</h2>
-                  <p className="mt-1 font-mono text-xs text-blue-200">{selectedClient.client_id}</p>
+                  <p className="mt-1 font-mono text-xs text-teal-100">{selectedClient.client_id}</p>
                 </div>
                 <button onClick={() => setSelectedClient(null)} className="mt-1 ml-4 text-xl transition text-white/50 hover:text-white shrink-0">✕</button>
               </div>
@@ -928,20 +928,20 @@ export default function ClientProfileList() {
       {showExport && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm">
           <div className="w-full max-w-md overflow-hidden bg-white shadow-2xl rounded-2xl">
-            <div className="px-6 py-5 bg-gradient-to-r from-blue-700 to-indigo-700">
+            <div className="px-6 py-5 bg-gradient-to-r from-teal-800 to-emerald-700">
               <h2 className="text-base font-bold text-white">Export Masterlist</h2>
-              <p className="text-xs text-blue-200 mt-0.5">{sorted.length} records (all pages) · {filterDesc}</p>
+              <p className="text-xs text-teal-100 mt-0.5">{sorted.length} records (all pages) · {filterDesc}</p>
             </div>
             <div className="p-6">
               <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400 mb-2">Columns to include</p>
               <div className="grid grid-cols-2 gap-1.5 mb-5 max-h-52 overflow-y-auto">
                 {ALL_COLS.map(col => (
                   <label key={col.key} className={`flex items-center gap-2 px-3 py-2 rounded-lg border cursor-pointer transition text-xs font-medium ${
-                    exportCols[col.key] ? 'border-blue-400 bg-blue-50 text-blue-700' : 'border-slate-200 text-slate-500 hover:border-slate-300'
+                    exportCols[col.key] ? 'border-teal-400 bg-teal-50 text-teal-700' : 'border-slate-200 text-slate-500 hover:border-slate-300'
                   }`}>
                     <input type="checkbox" checked={exportCols[col.key]}
                       onChange={e => setExportCols(p => ({ ...p, [col.key]: e.target.checked }))}
-                      className="accent-blue-600 shrink-0" />
+                      className="accent-teal-700 shrink-0" />
                     {col.label}
                   </label>
                 ))}

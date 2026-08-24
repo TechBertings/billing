@@ -17,6 +17,7 @@ import Period                 from "../../Maintenance/period";
 import RentFees                from "../../Maintenance/rent_fees";
 import ContributionRates       from "../../Maintenance/contribution_rates"; // ← new
 import TaxSetup                from "../../Maintenance/tax_setup";  
+import SSSContributionRates from "../../Maintenance/sss_table_setup"; // ← new
 
 const Maintenance = () => {
   const [selectedModule, setSelectedModule] = useState(null);
@@ -35,12 +36,12 @@ const Maintenance = () => {
     { id: "VatType",                 name: "VAT Type",                  description: "Manage VAT types",                                icon: HelpCircle },
     { id: "SalaryBracket",           name: "Salary Bracket",            description: "Manage salary brackets",                          icon: HelpCircle },
     { id: "Account",                 name: "Account",                   description: "Manage user accounts",                            icon: HelpCircle },
-    { id: "BatchBilling",            name: "BatchBilling",         description: "Manage agencies used in Chart of Accounts tabs",  icon: Building2  }, 
+    { id: "BatchBilling",            name: "BatchBilling",              description: "Manage agencies used in Chart of Accounts tabs",  icon: Building2  }, 
     { id: "Period",                  name: "Period",                    description: "Date period",                                      icon: Building2 },
     { id: "RentFees",                name: "Rent Fees",                 description: "Manage rental term schedules (Net of VAT, VAT, WTAX per year)", icon: Home },
     { id: "ContributionRates",       name: "Contribution Rates",        description: "Manage SSS, PhilHealth, and Pag-IBIG rate schedules", icon: Landmark }, // ← new
-    { id: "TaxSetup",                name: "Tax Setup",                 description: "Manage per-client tax rates and amounts",         icon: Landmark }, // ← new
-
+    { id: "TaxSetup",                name: "Tax Setup",                 description: "Manage per-client tax rates and amounts",         icon: Landmark },
+    { id: "SSSContributionRates",    name: "SSS Bracket Table",         description: "Manage the SSS fixed peso-per-bracket EE contribution table", icon: Landmark }, // ← new
   ];
 
   const filteredModules = sortBy === "all" ? modules : modules.filter(m => m.id === sortBy);
@@ -65,8 +66,14 @@ const Maintenance = () => {
       case "BatchBilling":           return <BatchBilling />;  
       case "Period":                 return <Period />;
       case "RentFees":               return <RentFees />;
-      case "ContributionRates":      return <ContributionRates />; // ← new
-      case "TaxSetup":                return <TaxSetup />; // ← new
+      case "ContributionRates":
+  return (
+    <ContributionRates
+      onNavigateToSSS={() => setSelectedModule("SSSContributionRates")}
+    />
+  );
+      case "TaxSetup":               return <TaxSetup />;
+      case "SSSContributionRates":   return <SSSContributionRates />; // ← new
       default:                       return null;
     }
   };
@@ -77,7 +84,7 @@ const Maintenance = () => {
         <div className="max-w-6xl mx-auto">
           <button
             onClick={() => { setSelectedModule(null); setSelectedRole(null); }}
-            className="flex items-center gap-2 px-4 py-2 mb-8 text-sm font-semibold text-blue-600 transition-all bg-white border border-blue-100 rounded-lg hover:bg-blue-50">
+            className="flex items-center gap-2 px-4 py-2 mb-8 text-sm font-semibold text-teal-700 transition-all bg-white border border-teal-100 rounded-lg hover:bg-teal-50">
             <ArrowLeft size={16} />
             Back to Maintenance Modules
           </button>
@@ -93,7 +100,7 @@ const Maintenance = () => {
             <div className="flex items-center gap-3">
               <span className="text-sm font-semibold text-slate-500">Sort by:</span>
               <select value={sortBy} onChange={e => setSortBy(e.target.value)}
-                className="px-4 py-2 text-sm font-semibold transition-all bg-white border rounded-lg cursor-pointer border-slate-200 text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-300">
+                className="px-4 py-2 text-sm font-semibold transition-all bg-white border rounded-lg cursor-pointer border-slate-200 text-slate-700 focus:outline-none focus:ring-2 focus:ring-teal-200 focus:border-teal-300">
                 <option value="all">All Modules</option>
                 {modules.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
               </select>
@@ -105,9 +112,9 @@ const Maintenance = () => {
               const Icon = module.icon;
               return (
                 <div key={module.id} onClick={() => setSelectedModule(module.id)}
-                  className="flex flex-col items-center p-8 text-center transition-all duration-200 bg-white border cursor-pointer border-slate-200 rounded-2xl hover:border-blue-200 hover:shadow-md hover:-translate-y-1 group">
-                  <div className="flex items-center justify-center w-16 h-16 mb-5 transition-colors rounded-2xl bg-blue-50 group-hover:bg-blue-100">
-                    <Icon size={28} className="text-blue-500" />
+                  className="flex flex-col items-center p-8 text-center transition-all duration-200 bg-white border cursor-pointer border-slate-200 rounded-2xl hover:border-teal-200 hover:shadow-md hover:-translate-y-1 group">
+                  <div className="flex items-center justify-center w-16 h-16 mb-5 transition-colors rounded-2xl bg-teal-50 group-hover:bg-teal-100">
+                    <Icon size={28} className="text-teal-600" />
                   </div>
                   <h3 className="mb-2 text-xs font-black tracking-widest uppercase text-slate-800">{module.name}</h3>
                   <p className="text-xs font-medium leading-relaxed text-slate-400">{module.description}</p>
@@ -117,7 +124,7 @@ const Maintenance = () => {
           </div>
 
           <div className="px-6 py-4 mt-8 text-center bg-white border border-slate-200 rounded-2xl">
-            <span className="text-sm font-semibold text-blue-500">
+            <span className="text-sm font-semibold text-emerald-600">
               {modules.length} module{modules.length !== 1 ? 's' : ''} available for configuration
             </span>
           </div>

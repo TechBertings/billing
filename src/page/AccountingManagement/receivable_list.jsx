@@ -6,6 +6,9 @@ import {
   FaFileInvoiceDollar,
   FaChevronRight,
   FaCoins,
+  FaReceipt,
+  FaMoneyBillWave,
+  FaUndo,
 } from "react-icons/fa";
 
 const GREEN = "#1a5c2e";
@@ -45,6 +48,14 @@ const STATUS_META = {
   overdue: { label: "Overdue", color: RED, bg: "#fdecea" },
 };
 
+const PAYMENT_METHOD_LABELS = {
+  cash: "Cash",
+  cheque: "Cheque",
+  bank_transfer: "Bank Transfer",
+  credit: "Client Credit",
+  other: "Other",
+};
+
 const STATUS_FILTERS = ["all", "unpaid", "partial", "overdue", "paid"];
 
 export default function ReceivablesList({ onSelectInvoice }) {
@@ -60,6 +71,11 @@ export default function ReceivablesList({ onSelectInvoice }) {
   // ── Date range filter (filters on due_date) ──
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
+
+  // ── Detail modal (payment history for a single SOA) ──
+  const [detailRow, setDetailRow] = useState(null); // the clicked row (summary)
+  const [payments, setPayments] = useState([]);
+  const [paymentsLoading, setPaymentsLoading] = useState(false);
 
   const getClientPrimaryName = (c) => {
     if (!c) return "Unknown client";
@@ -217,6 +233,42 @@ export default function ReceivablesList({ onSelectInvoice }) {
     setEndDate("");
   };
 
+  // ── Open detail modal + fetch full payment history for that SOA ──
+  const openDetail = async (row) => {
+    setDetailRow(row);
+    setPayments([]);
+    setPaymentsLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from("official_receipts")
+        .select(
+          "id, invoice_number, amount, payment_date, payment_method, reference_number, cheque_number, cheque_bank, collected_by, recorded_by, notes, deposit_status",
+        )
+        .eq("billing_id", row.id)
+        .order("payment_date", { ascending: true });
+      if (error) throw error;
+      setPayments(data || []);
+    } catch (err) {
+      console.error("Fetch payment history error:", err);
+    }
+    setPaymentsLoading(false);
+  };
+
+  const closeDetail = () => {
+    setDetailRow(null);
+    setPayments([]);
+  };
+
+  // Running total as we walk through the payment history (handles
+  // reversals, which are negative-amount entries, correctly).
+  const paymentsWithRunning = useMemo(() => {
+    let running = 0;
+    return payments.map((p) => {
+      running += Number(p.amount || 0);
+      return { ...p, running };
+    });
+  }, [payments]);
+
   return (
     <div className="flex flex-col h-screen bg-gray-50">
       {/* TOP BAR */}
@@ -372,7 +424,7 @@ export default function ReceivablesList({ onSelectInvoice }) {
                       return (
                         <tr
                           key={r.id}
-                          onClick={() => onSelectInvoice?.(r.client, r.client_id, r.id)}
+                          onClick={() => openDetail(r)}
                           className="transition border-t cursor-pointer border-gray-50 hover:bg-gray-50/60"
                         >
                           <td className="px-4 py-3 font-mono text-gray-700">{r.soa_number}</td>
@@ -453,6 +505,146 @@ export default function ReceivablesList({ onSelectInvoice }) {
           )}
         </div>
       </div>
+
+      {/* DETAIL MODAL — full payment history for the clicked SOA */}
+      {detailRow && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
+          <div className="w-full max-w-2xl max-h-[85vh] flex flex-col bg-white shadow-2xl rounded-xl overflow-hidden">
+            {/* Header */}
+            <div className="flex items-start justify-between flex-shrink-0 px-5 py-4 border-b border-gray-100">
+              <div>
+                <div className="flex items-center gap-2">
+                  <FaFileInvoiceDollar size={13} style={{ color: GREEN }} />
+                  <p className="text-sm font-semibold text-gray-800">{detailRow.soa_number}</p>
+                  <span
+                    className="inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold"
+                    style={{
+                      background: STATUS_META[detailRow.computed_status].bg,
+                      color: STATUS_META[detailRow.computed_status].color,
+                    }}
+                  >
+                    {STATUS_META[detailRow.computed_status].label}
+                  </span>
+                </div>
+                <p className="mt-0.5 text-xs text-gray-500">
+                  {getClientPrimaryName(detailRow.client)}{" "}
+                  <span className="font-mono text-gray-400">({detailRow.client_id})</span>
+                </p>
+                <p className="text-[11px] text-gray-400">
+                  SOA date {fmtDate(detailRow.soa_date)} · Due {fmtDate(detailRow.due_date)}
+                </p>
+              </div>
+              <button onClick={closeDetail} className="p-1.5 text-gray-300 rounded-md hover:text-gray-500 hover:bg-gray-50">
+                <FaTimes size={14} />
+              </button>
+            </div>
+
+            {/* Summary strip */}
+            <div className="grid flex-shrink-0 grid-cols-3 gap-3 px-5 py-3 border-b border-gray-100 bg-gray-50">
+              <div>
+                <p className="text-[10px] font-medium tracking-wide text-gray-400 uppercase">Total Amount</p>
+                <p className="font-mono text-sm font-semibold text-gray-800">₱{fmt(detailRow.total_amount)}</p>
+              </div>
+              <div>
+                <p className="text-[10px] font-medium tracking-wide text-gray-400 uppercase">Paid</p>
+                <p className="font-mono text-sm font-semibold text-green-700">₱{fmt(detailRow.paid)}</p>
+              </div>
+              <div>
+                <p className="text-[10px] font-medium tracking-wide text-gray-400 uppercase">Balance</p>
+                <p className="font-mono text-sm font-semibold" style={{ color: detailRow.balance > 0.005 ? RED : GREEN }}>
+                  ₱{fmt(detailRow.balance)}
+                </p>
+              </div>
+            </div>
+
+            {/* Payment history */}
+            <div className="flex-1 min-h-0 overflow-y-auto">
+              {paymentsLoading ? (
+                <div className="flex justify-center py-10">
+                  <div className="w-4 h-4 border-2 border-blue-500 rounded-full border-t-transparent animate-spin" />
+                </div>
+              ) : payments.length === 0 ? (
+                <div className="flex flex-col items-center gap-2 py-10 text-gray-300">
+                  <FaReceipt size={20} />
+                  <p className="text-xs">No payments recorded yet for this SOA.</p>
+                </div>
+              ) : (
+                <table className="w-full text-xs">
+                  <thead className="sticky top-0 text-gray-500 bg-white border-b border-gray-100">
+                    <tr>
+                      <th className="px-5 py-2 font-medium text-left">Date</th>
+                      <th className="px-3 py-2 font-medium text-left">Invoice #</th>
+                      <th className="px-3 py-2 font-medium text-left">Method</th>
+                      <th className="px-3 py-2 font-medium text-left">Details</th>
+                      <th className="px-3 py-2 font-medium text-right">Amount</th>
+                      <th className="px-5 py-2 font-medium text-right">Running Total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {paymentsWithRunning.map((p) => {
+                      const isReversal = Number(p.amount) < 0;
+                      return (
+                        <tr key={p.id} className="border-b border-gray-50">
+                          <td className="px-5 py-2.5 text-gray-600 whitespace-nowrap">{fmtDate(p.payment_date)}</td>
+                          <td className="px-3 py-2.5 font-mono text-gray-700 whitespace-nowrap">{p.invoice_number}</td>
+                          <td className="px-3 py-2.5 text-gray-600 whitespace-nowrap">
+                            {PAYMENT_METHOD_LABELS[p.payment_method] || p.payment_method}
+                            {isReversal && (
+                              <span className="inline-flex items-center gap-1 ml-1.5 text-[10px] font-semibold" style={{ color: RED }}>
+                                <FaUndo size={8} /> reversal
+                              </span>
+                            )}
+                          </td>
+                          <td className="px-3 py-2.5 text-gray-400">
+                            {p.payment_method === "cheque" && p.cheque_number
+                              ? `${p.cheque_number}${p.cheque_bank ? " / " + p.cheque_bank : ""}`
+                              : p.reference_number || (p.notes ? p.notes : "—")}
+                            {p.deposit_status === "undeposited" && (
+                              <span className="ml-1.5 text-[10px] font-medium" style={{ color: AMBER }}>
+                                · undeposited
+                              </span>
+                            )}
+                          </td>
+                          <td
+                            className="px-3 py-2.5 font-mono font-semibold text-right whitespace-nowrap"
+                            style={{ color: isReversal ? RED : "#374151" }}
+                          >
+                            {isReversal ? "− " : ""}₱{fmt(Math.abs(p.amount))}
+                          </td>
+                          <td className="px-5 py-2.5 font-mono text-right text-gray-500 whitespace-nowrap">₱{fmt(p.running)}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              )}
+            </div>
+
+            {/* Footer actions */}
+            <div className="flex items-center justify-between flex-shrink-0 px-5 py-3 border-t border-gray-100 bg-gray-50">
+              <button
+                onClick={closeDetail}
+                className="px-3 py-2 text-xs font-medium text-gray-600 border border-gray-200 rounded-md hover:bg-white"
+              >
+                Close
+              </button>
+              {detailRow.balance > 0.005 && (
+                <button
+                  onClick={() => {
+                    onSelectInvoice?.(detailRow.client, detailRow.client_id, detailRow.id);
+                    closeDetail();
+                  }}
+                  className="flex items-center gap-2 px-4 py-2 text-xs font-medium text-white rounded-md"
+                  style={{ background: GREEN }}
+                >
+                  <FaMoneyBillWave size={11} />
+                  Record Payment for this SOA
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

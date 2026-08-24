@@ -2,10 +2,18 @@ import React, { useState, useEffect } from 'react';
 import {
   FaFileInvoiceDollar, FaMoneyBillWave, FaBell, FaIdCard,
   FaExclamationTriangle, FaCheckCircle, FaClock, FaChevronRight,
-  FaArrowUp, FaArrowDown, FaEllipsisH, FaSearch, FaFilter,
-  FaCalendarAlt, FaBuilding, FaPhoneAlt, FaEnvelope
+  FaSearch, FaCalendarAlt, FaPhoneAlt, FaArrowUp, FaArrowDown
 } from 'react-icons/fa';
 import { supabase } from '../lib/supabaseClient';
+
+// ─── PALETTE — deep teal (dark/primary) + mint green (accent/positive) only.
+// Red is used sparingly, inline-text-only, for overdue/negative deltas — matching
+// the reference: everything else stays teal/mint/neutral. ──────────────────────
+const TEAL_DARK   = '#0d3b3b';   // hero card background, dark icon chips
+const TEAL_DEEPER = '#0a2f2f';   // gradient end for hero card
+const MINT        = '#22c55e';   // bright accent — positive, buttons, success pill
+const MINT_SOFT   = '#e9f9ef';   // soft mint background for chips/pills
+const RED_TEXT    = '#dc2626';   // negative delta / overdue — text only, no big blocks
 
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
 const fmtPeso = (n) =>
@@ -22,49 +30,140 @@ const daysUntil = (d) => {
   return Math.ceil(diff / (1000 * 60 * 60 * 24));
 };
 
-const urgencyColor = (days) => {
-  if (days === null) return 'text-slate-400';
-  if (days < 0)  return 'text-red-600';
-  if (days <= 7)  return 'text-red-500';
-  if (days <= 30) return 'text-amber-500';
-  return 'text-emerald-500';
+// ── Billing summary — built from billing_statements + billing_items + official_receipts,
+// same convention as ReceivablesList.jsx (computed status, not a raw column) ──
+function isPastDue(dueDate) {
+  if (!dueDate) return false;
+  return new Date(dueDate) < new Date(new Date().toDateString());
+}
+function computeBillingStatus(charge, paid, dueDate) {
+  const balance = Math.max(0, charge - paid);
+  if (balance <= 0.005) return 'paid';
+  if (paid > 0.005) return 'partial';
+  if (isPastDue(dueDate)) return 'overdue';
+  return 'unpaid';
+}
+function clientDisplayName(c) {
+  if (!c) return 'Unknown client';
+  return (
+    c.business_name ||
+    c.trade_name ||
+    [c.first_name, c.middle_name, c.last_name].filter(Boolean).join(' ') ||
+    'Unknown client'
+  );
+}
+
+async function fetchBillingSummary() {
+  const { data: statements, error: stErr } = await supabase
+    .from('billing_statements')
+    .select('id, soa_number, client_id, soa_date, due_date, status')
+    .not('status', 'in', '(draft,pending_approval)')
+    .order('soa_date', { ascending: false });
+  if (stErr) throw stErr;
+
+  const billingIds = (statements || []).map((s) => s.id);
+  const clientIds = [...new Set((statements || []).map((s) => s.client_id))];
+
+  let chargeTotals = {};
+  if (billingIds.length > 0) {
+    const { data: items, error: itErr } = await supabase
+      .from('billing_items')
+      .select('billing_id, amount')
+      .in('billing_id', billingIds);
+    if (itErr) throw itErr;
+    (items || []).forEach((i) => {
+      chargeTotals[i.billing_id] = (chargeTotals[i.billing_id] || 0) + (Number(i.amount) || 0);
+    });
+  }
+
+  let paidTotals = {};
+  if (billingIds.length > 0) {
+    const { data: receipts, error: orErr } = await supabase
+      .from('official_receipts')
+      .select('billing_id, amount')
+      .in('billing_id', billingIds);
+    if (orErr) throw orErr;
+    (receipts || []).forEach((r) => {
+      if (!r.billing_id) return;
+      paidTotals[r.billing_id] = (paidTotals[r.billing_id] || 0) + (Number(r.amount) || 0);
+    });
+  }
+
+  let clientMap = {};
+  if (clientIds.length > 0) {
+    const { data: clients } = await supabase
+      .from('client_profile')
+      .select('client_id, business_name, trade_name, first_name, middle_name, last_name')
+      .in('client_id', clientIds);
+    (clients || []).forEach((c) => { clientMap[c.client_id] = c; });
+  }
+
+  return (statements || []).map((s) => {
+    const charge = chargeTotals[s.id] || 0;
+    const paid = paidTotals[s.id] || 0;
+    return {
+      id: s.id,
+      soa_number: s.soa_number,
+      client_name: clientDisplayName(clientMap[s.client_id]),
+      billing_date: s.soa_date,
+      due_date: s.due_date,
+      amount: charge,
+      paid,
+      status: computeBillingStatus(charge, paid, s.due_date),
+    };
+  });
+}
+
+// ─── STATUS PILL — soft mint for good states, soft neutral for pending, red text-only for alerts ──
+const StatusPill = ({ status }) => {
+  const map = {
+    paid:     { bg: MINT_SOFT, color: '#15803d', label: 'Paid' },
+    partial:  { bg: '#eef2f7', color: '#475569', label: 'Partial' },
+    unpaid:   { bg: '#eef2f7', color: '#475569', label: 'Unpaid' },
+    overdue:  { bg: '#fdecec', color: RED_TEXT,  label: 'Overdue' },
+    approved: { bg: MINT_SOFT, color: '#15803d', label: 'Approved' },
+    pending:  { bg: '#eef2f7', color: '#475569', label: 'Pending' },
+    rejected: { bg: '#fdecec', color: RED_TEXT,  label: 'Rejected' },
+  };
+  const m = map[status] || map.pending;
+  return (
+    <span
+      className="text-[10px] font-bold px-2.5 py-1 rounded-full capitalize"
+      style={{ background: m.bg, color: m.color }}
+    >
+      {m.label}
+    </span>
+  );
 };
 
-const urgencyBg = (days) => {
-  if (days === null) return 'bg-slate-100 text-slate-500';
-  if (days < 0)  return 'bg-red-100 text-red-700';
-  if (days <= 7)  return 'bg-red-50 text-red-600';
-  if (days <= 30) return 'bg-amber-50 text-amber-600';
-  return 'bg-emerald-50 text-emerald-600';
-};
-
-// ─── STAT CARD ────────────────────────────────────────────────────────────────
-const StatCard = ({ icon: Icon, label, value, sub, accent, trend, trendVal }) => (
-  <div className={`bg-white rounded-2xl border border-slate-200 p-5 relative overflow-hidden shadow-sm hover:shadow-md transition-shadow`}>
-    <div className={`absolute top-0 right-0 w-24 h-24 rounded-full opacity-5 -translate-y-6 translate-x-6 ${accent}`} />
-    <div className="flex items-start justify-between mb-3">
-      <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${accent} bg-opacity-10`}>
-        <Icon size={17} className={accent.replace('bg-', 'text-')} />
+// ─── COMPACT STAT CARD — white, minimal, small delta text like the reference mini-cards ──
+const StatCard = ({ icon: Icon, label, value, sub, deltaLabel, deltaPositive }) => (
+  <div className="p-5 bg-white border shadow-sm rounded-2xl border-slate-100">
+    <div className="flex items-center justify-between mb-3">
+      <div className="flex items-center justify-center w-9 h-9 rounded-xl" style={{ background: MINT_SOFT }}>
+        <Icon size={14} style={{ color: TEAL_DARK }} />
       </div>
-      {trend !== undefined && (
-        <div className={`flex items-center gap-1 text-xs font-semibold px-2 py-1 rounded-full ${trend >= 0 ? 'bg-emerald-50 text-emerald-600' : 'bg-red-50 text-red-500'}`}>
-          {trend >= 0 ? <FaArrowUp size={9} /> : <FaArrowDown size={9} />}
-          {Math.abs(trendVal)}%
-        </div>
+      {deltaLabel && (
+        <span
+          className="flex items-center gap-1 text-[11px] font-semibold"
+          style={{ color: deltaPositive ? MINT : RED_TEXT }}
+        >
+          {deltaPositive ? <FaArrowUp size={8} /> : <FaArrowDown size={8} />}
+          {deltaLabel}
+        </span>
       )}
     </div>
-    <p className="text-2xl font-bold text-slate-800 mb-0.5">{value}</p>
-    <p className="text-xs font-semibold tracking-wide uppercase text-slate-500">{label}</p>
-    {sub && <p className="mt-1 text-xs text-slate-400">{sub}</p>}
+    <p className="text-xl font-bold text-slate-800">{value}</p>
+    <p className="mt-1 text-xs font-medium text-slate-400">{label}{sub ? ` · ${sub}` : ''}</p>
   </div>
 );
 
 // ─── SECTION HEADER ───────────────────────────────────────────────────────────
-const SectionHeader = ({ icon: Icon, title, count, accent, action, onAction }) => (
+const SectionHeader = ({ icon: Icon, title, count, action, onAction }) => (
   <div className="flex items-center justify-between mb-4">
     <div className="flex items-center gap-2.5">
-      <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${accent}`}>
-        <Icon size={14} className="text-white" />
+      <div className="flex items-center justify-center w-8 h-8 rounded-lg" style={{ background: TEAL_DARK }}>
+        <Icon size={13} className="text-white" />
       </div>
       <h2 className="text-base font-bold text-slate-800">{title}</h2>
       {count !== undefined && (
@@ -72,7 +171,7 @@ const SectionHeader = ({ icon: Icon, title, count, accent, action, onAction }) =
       )}
     </div>
     {action && (
-      <button onClick={onAction} className="flex items-center gap-1 text-xs font-semibold text-blue-600 transition hover:text-blue-700">
+      <button onClick={onAction} className="flex items-center gap-1 text-xs font-semibold transition hover:opacity-70" style={{ color: TEAL_DARK }}>
         {action} <FaChevronRight size={9} />
       </button>
     )}
@@ -88,7 +187,7 @@ const Empty = ({ label }) => (
 
 // ─── MAIN COMPONENT ───────────────────────────────────────────────────────────
 export default function FinanceDashboard({ currentUser, onNavigate }) {
-  const [billing, setBilling]         = useState([]);
+  const [billing, setBilling]         = useState([]); // full computed set, used for totals
   const [fundRequests, setFundReqs]   = useState([]);
   const [followUps, setFollowUps]     = useState([]);
   const [permits, setPermits]         = useState([]);
@@ -100,13 +199,13 @@ export default function FinanceDashboard({ currentUser, onNavigate }) {
   useEffect(() => {
     const fetchAll = async () => {
       try {
-        const [bilRes, frRes, fuRes, pmRes] = await Promise.all([
-          supabase.from('billing').select('*').order('created_at', { ascending: false }).limit(10),
+        const [billingData, frRes, fuRes, pmRes] = await Promise.all([
+          fetchBillingSummary(),
           supabase.from('fund_requests').select('*').order('created_at', { ascending: false }).limit(10),
           supabase.from('follow_ups').select('*').order('follow_up_date', { ascending: true }).limit(10),
           supabase.from('client_profile').select('id,client_id,business_name,date_of_expiration,business_registration,account').not('date_of_expiration', 'is', null).order('date_of_expiration', { ascending: true }).limit(50),
         ]);
-        if (bilRes.data)  setBilling(bilRes.data);
+        setBilling(billingData || []);
         if (frRes.data)   setFundReqs(frRes.data);
         if (fuRes.data)   setFollowUps(fuRes.data);
         if (pmRes.data)   setPermits(pmRes.data);
@@ -119,11 +218,18 @@ export default function FinanceDashboard({ currentUser, onNavigate }) {
     fetchAll();
   }, []);
 
-  // ── Derived ──────────────────────────────────────────────────────────────
-  const totalBilled   = billing.reduce((s, b) => s + Number(b.amount || 0), 0);
-  const pendingBilling = billing.filter(b => b.status === 'pending').length;
-  const pendingFR     = fundRequests.filter(f => f.status === 'pending').length;
-  const overdueFollowUps = followUps.filter(f => daysUntil(f.follow_up_date) < 0).length;
+  // ── Derived — billing totals computed over the FULL set, list shows latest 10 ──
+  const totalBilled        = billing.reduce((s, b) => s + Number(b.amount || 0), 0);
+  const totalCollected     = billing.reduce((s, b) => s + Number(b.paid || 0), 0);
+  const paidBillingCount    = billing.filter(b => b.status === 'paid').length;
+  const pendingBillingCount = billing.filter(b => b.status === 'unpaid' || b.status === 'partial').length;
+  const overdueBillingCount = billing.filter(b => b.status === 'overdue').length;
+  const collectionRate = totalBilled > 0.005 ? (totalCollected / totalBilled) * 100 : 0;
+  const displayBilling  = billing.slice(0, 8);
+
+  const pendingFR         = fundRequests.filter(f => f.status === 'pending').length;
+  const overdueFollowUps  = followUps.filter(f => daysUntil(f.follow_up_date) < 0).length;
+  const expiringPermitsCount = permits.filter(p => { const d = daysUntil(p.date_of_expiration); return d !== null && d >= 0 && d <= 30; }).length;
 
   const filteredPermits = permits.filter(p => {
     const days = daysUntil(p.date_of_expiration);
@@ -135,14 +241,14 @@ export default function FinanceDashboard({ currentUser, onNavigate }) {
   if (loading) return (
     <div className="flex items-center justify-center min-h-[60vh]">
       <div className="text-center">
-        <div className="w-10 h-10 mx-auto mb-3 border-2 border-blue-600 rounded-full border-t-transparent animate-spin" />
+        <div className="w-10 h-10 mx-auto mb-3 border-2 rounded-full animate-spin" style={{ borderColor: TEAL_DARK, borderTopColor: 'transparent' }} />
         <p className="text-sm text-slate-500">Loading dashboard...</p>
       </div>
     </div>
   );
 
   return (
-    <div className="max-w-screen-xl px-6 py-2 mx-auto space-y-6">
+    <div className="max-w-screen-xl px-6 py-5 mx-auto space-y-6 bg-slate-50">
 
       {/* ── TOP GREETING ── */}
       <div className="flex items-center justify-between">
@@ -152,111 +258,146 @@ export default function FinanceDashboard({ currentUser, onNavigate }) {
           </h1>
           <p className="text-sm text-slate-500 mt-0.5">
             {new Date().toLocaleDateString('en-PH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
-            {currentUser && <span className="ml-2 text-blue-500">· {currentUser.fullName || currentUser.username}</span>}
+            {currentUser && <span className="ml-2" style={{ color: TEAL_DARK }}>· {currentUser.fullName || currentUser.username}</span>}
           </p>
         </div>
       </div>
 
-      {/* ── STAT CARDS ── */}
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <StatCard
-          icon={FaFileInvoiceDollar}
-          label="Total Billed"
-          value={fmtPeso(totalBilled)}
-          sub={`${billing.length} billing records`}
-          accent="bg-blue-500"
-          trend={1} trendVal={8.2}
+      {/* ── HERO CARD — Total Billed, dark teal gradient, mint action button ── */}
+      <div
+        className="relative p-6 overflow-hidden text-white rounded-2xl"
+        style={{ background: `linear-gradient(135deg, ${TEAL_DARK}, ${TEAL_DEEPER})` }}
+      >
+        <div
+          className="absolute rounded-full -right-10 -top-16 w-52 h-52 opacity-10"
+          style={{ background: MINT }}
         />
+        <div className="relative flex flex-wrap items-end justify-between gap-4">
+          <div>
+            <p className="text-xs font-medium tracking-wide uppercase text-white/60">Total Billed</p>
+            <p className="mt-1 text-3xl font-bold">{fmtPeso(totalBilled)}</p>
+            <div className="flex items-center gap-3 mt-2 text-xs text-white/70">
+              <span>{billing.length} statements</span>
+              <span className="w-1 h-1 rounded-full bg-white/30" />
+              <span style={{ color: MINT }}>{collectionRate.toFixed(1)}% collected</span>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => onNavigate?.('RecordPayment')}
+              className="px-4 py-2 text-xs font-semibold rounded-lg"
+              style={{ background: MINT, color: TEAL_DEEPER }}
+            >
+              + Record Payment
+            </button>
+            <button
+              onClick={() => onNavigate?.('ReceivablesList')}
+              className="px-4 py-2 text-xs font-semibold text-white transition border rounded-lg border-white/20 bg-white/10 hover:bg-white/20"
+            >
+              View Receivables
+            </button>
+          </div>
+        </div>
+
+        {/* Quick breakdown pills */}
+        <div className="relative grid grid-cols-3 gap-3 pt-4 mt-5 border-t border-white/10">
+          {[
+            { label: 'Paid', val: paidBillingCount },
+            { label: 'Pending', val: pendingBillingCount },
+            { label: 'Overdue', val: overdueBillingCount },
+          ].map((s) => (
+            <div key={s.label}>
+              <p className="text-lg font-bold" style={{ color: s.label === 'Overdue' ? '#f87171' : s.label === 'Paid' ? MINT : '#fff' }}>
+                {s.val}
+              </p>
+              <p className="text-[10px] uppercase tracking-wide text-white/50 font-semibold">{s.label}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* ── STAT CARDS ── */}
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-3">
         <StatCard
           icon={FaMoneyBillWave}
           label="Fund Requests"
           value={pendingFR}
           sub="pending approval"
-          accent="bg-violet-500"
         />
         <StatCard
           icon={FaBell}
-          label="Follow-ups Due"
+          label="Follow-ups"
           value={overdueFollowUps}
           sub="overdue items"
-          accent="bg-amber-500"
+          deltaLabel={overdueFollowUps > 0 ? `${overdueFollowUps} due` : undefined}
+          deltaPositive={overdueFollowUps === 0}
         />
         <StatCard
           icon={FaIdCard}
           label="Expiring Permits"
-          value={permits.filter(p => { const d = daysUntil(p.date_of_expiration); return d !== null && d >= 0 && d <= 30; }).length}
+          value={expiringPermitsCount}
           sub="within 30 days"
-          accent="bg-red-500"
+          deltaLabel={expiringPermitsCount > 0 ? 'needs review' : undefined}
+          deltaPositive={expiringPermitsCount === 0}
         />
       </div>
 
-      {/* ── ROW 1: Billing + Fund Requests ── */}
+      {/* ── ROW: Billing (Recent Activity style) + Fund Requests ── */}
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
 
-        {/* BILLING */}
-        <div className="p-5 bg-white border shadow-sm rounded-2xl border-slate-200">
+        {/* BILLING — styled like the "Recent Activity" table in the reference */}
+        <div className="p-5 bg-white border shadow-sm rounded-2xl border-slate-100">
           <SectionHeader
             icon={FaFileInvoiceDollar}
-            title="Billing"
+            title="Recent Billing"
             count={billing.length}
-            accent="bg-blue-500"
             action="View All"
-            onAction={() => onNavigate?.('CreateBilling')}
+            onAction={() => onNavigate?.('ReceivablesList')}
           />
-          <div className="pr-1 space-y-2 overflow-y-auto max-h-72">
-            {billing.length === 0 ? <Empty label="No billing records" /> : billing.map((b, i) => (
-              <div key={b.id || i} className="flex items-center justify-between p-3 transition border border-transparent rounded-xl hover:bg-slate-50 hover:border-slate-100 group">
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-semibold truncate text-slate-800">{b.client_name || b.business_name || `Billing #${b.id}`}</p>
-                  <p className="text-xs text-slate-400 mt-0.5">{fmtDate(b.billing_date || b.created_at)}</p>
-                </div>
-                <div className="flex items-center gap-2 ml-3 shrink-0">
-                  <span className="text-sm font-bold text-slate-800">{fmtPeso(b.amount)}</span>
-                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full capitalize ${
-                    b.status === 'paid'    ? 'bg-emerald-100 text-emerald-700' :
-                    b.status === 'overdue' ? 'bg-red-100 text-red-600' :
-                    'bg-amber-100 text-amber-600'
-                  }`}>
-                    {b.status || 'pending'}
-                  </span>
-                </div>
-              </div>
-            ))}
-          </div>
 
-          {/* Mini totals */}
-          <div className="grid grid-cols-3 gap-2 pt-3 mt-3 border-t border-slate-100">
-            {[
-              { label: 'Paid',    val: billing.filter(b => b.status === 'paid').length,    cls: 'text-emerald-600' },
-              { label: 'Pending', val: pendingBilling, cls: 'text-amber-600' },
-              { label: 'Overdue', val: billing.filter(b => b.status === 'overdue').length, cls: 'text-red-500' },
-            ].map(s => (
-              <div key={s.label} className="text-center">
-                <p className={`text-lg font-bold ${s.cls}`}>{s.val}</p>
-                <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide">{s.label}</p>
-              </div>
-            ))}
-          </div>
+          {displayBilling.length === 0 ? <Empty label="No billing records" /> : (
+            <div className="overflow-hidden">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="text-slate-400">
+                    <th className="pb-2 font-medium text-left">Client</th>
+                    <th className="pb-2 font-medium text-left">Amount</th>
+                    <th className="pb-2 font-medium text-left">Status</th>
+                    <th className="pb-2 font-medium text-right">Due</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {displayBilling.map((b) => (
+                    <tr key={b.id} className="border-t border-slate-50">
+                      <td className="py-2.5">
+                        <p className="text-sm font-semibold text-slate-800">{b.client_name}</p>
+                        <p className="text-[10px] text-slate-400">{b.soa_number}</p>
+                      </td>
+                      <td className="py-2.5 text-sm font-semibold text-slate-700">{fmtPeso(b.amount)}</td>
+                      <td className="py-2.5"><StatusPill status={b.status} /></td>
+                      <td className="py-2.5 text-right text-slate-500">{fmtDate(b.due_date)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
 
         {/* FUND REQUESTS */}
-        <div className="p-5 bg-white border shadow-sm rounded-2xl border-slate-200">
+        <div className="p-5 bg-white border shadow-sm rounded-2xl border-slate-100">
           <SectionHeader
             icon={FaMoneyBillWave}
             title="Fund Requests"
             count={fundRequests.length}
-            accent="bg-violet-500"
           />
-          <div className="pr-1 space-y-2 overflow-y-auto max-h-72">
+          <div className="pr-1 space-y-1 overflow-y-auto max-h-72">
             {fundRequests.length === 0 ? <Empty label="No fund requests" /> : fundRequests.map((f, i) => (
-              <div key={f.id || i} className="flex items-start gap-3 p-3 transition border border-transparent rounded-xl hover:bg-slate-50 hover:border-slate-100">
-                <div className={`mt-0.5 w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
-                  f.status === 'approved' ? 'bg-emerald-100' :
-                  f.status === 'rejected' ? 'bg-red-100' : 'bg-violet-100'
-                }`}>
-                  {f.status === 'approved' ? <FaCheckCircle size={13} className="text-emerald-600" /> :
-                   f.status === 'rejected' ? <FaExclamationTriangle size={13} className="text-red-500" /> :
-                   <FaClock size={13} className="text-violet-500" />}
+              <div key={f.id || i} className="flex items-start gap-3 p-2.5 transition rounded-xl hover:bg-slate-50">
+                <div className="flex items-center justify-center w-8 h-8 mt-0.5 rounded-lg shrink-0" style={{ background: MINT_SOFT }}>
+                  {f.status === 'approved' ? <FaCheckCircle size={12} style={{ color: '#15803d' }} /> :
+                   f.status === 'rejected' ? <FaExclamationTriangle size={12} style={{ color: RED_TEXT }} /> :
+                   <FaClock size={12} style={{ color: TEAL_DARK }} />}
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-semibold truncate text-slate-800">{f.title || f.description || `Request #${f.id}`}</p>
@@ -264,61 +405,39 @@ export default function FinanceDashboard({ currentUser, onNavigate }) {
                 </div>
                 <div className="text-right shrink-0">
                   <p className="text-sm font-bold text-slate-800">{fmtPeso(f.amount)}</p>
-                  <span className={`text-[10px] font-bold capitalize ${
-                    f.status === 'approved' ? 'text-emerald-600' :
-                    f.status === 'rejected' ? 'text-red-500' : 'text-violet-500'
-                  }`}>
-                    {f.status || 'pending'}
-                  </span>
+                  <StatusPill status={f.status || 'pending'} />
                 </div>
-              </div>
-            ))}
-          </div>
-
-          <div className="grid grid-cols-3 gap-2 pt-3 mt-3 border-t border-slate-100">
-            {[
-              { label: 'Approved', val: fundRequests.filter(f => f.status === 'approved').length, cls: 'text-emerald-600' },
-              { label: 'Pending',  val: pendingFR, cls: 'text-violet-500' },
-              { label: 'Rejected', val: fundRequests.filter(f => f.status === 'rejected').length, cls: 'text-red-500' },
-            ].map(s => (
-              <div key={s.label} className="text-center">
-                <p className={`text-lg font-bold ${s.cls}`}>{s.val}</p>
-                <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide">{s.label}</p>
               </div>
             ))}
           </div>
         </div>
       </div>
 
-      {/* ── ROW 2: Follow-ups + Permits Expiration ── */}
+      {/* ── ROW: Follow-ups + Permits Expiration ── */}
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
 
         {/* FOLLOW-UPS */}
-        <div className="p-5 bg-white border shadow-sm rounded-2xl border-slate-200">
+        <div className="p-5 bg-white border shadow-sm rounded-2xl border-slate-100">
           <SectionHeader
             icon={FaBell}
             title="Follow Ups"
             count={followUps.length}
-            accent="bg-amber-500"
           />
-          <div className="pr-1 space-y-2 overflow-y-auto max-h-80">
+          <div className="pr-1 space-y-1 overflow-y-auto max-h-80">
             {followUps.length === 0 ? <Empty label="No follow-ups scheduled" /> : followUps.map((f, i) => {
               const days = daysUntil(f.follow_up_date);
+              const urgent = days !== null && days <= 0;
               return (
-                <div key={f.id || i} className="flex items-start gap-3 p-3 transition border border-transparent rounded-xl hover:bg-slate-50 hover:border-slate-100">
-                  {/* Day indicator */}
-                  <div className={`shrink-0 w-10 h-10 rounded-xl flex flex-col items-center justify-center text-center ${
-                    days === null ? 'bg-slate-100' :
-                    days < 0     ? 'bg-red-100' :
-                    days <= 7    ? 'bg-amber-100' : 'bg-blue-50'
-                  }`}>
+                <div key={f.id || i} className="flex items-start gap-3 p-2.5 transition rounded-xl hover:bg-slate-50">
+                  <div
+                    className="flex flex-col items-center justify-center w-10 h-10 text-center shrink-0 rounded-xl"
+                    style={{ background: urgent ? '#fdecec' : MINT_SOFT }}
+                  >
                     {days !== null ? (
-                      <>
-                        <span className={`text-[10px] font-bold leading-none ${urgencyColor(days)}`}>
-                          {days < 0 ? 'OVER' : days === 0 ? 'TODAY' : `${days}d`}
-                        </span>
-                      </>
-                    ) : <FaCalendarAlt size={13} className="text-slate-400" />}
+                      <span className="text-[10px] font-bold leading-none" style={{ color: urgent ? RED_TEXT : '#15803d' }}>
+                        {days < 0 ? 'OVER' : days === 0 ? 'TODAY' : `${days}d`}
+                      </span>
+                    ) : <FaCalendarAlt size={12} className="text-slate-400" />}
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-semibold truncate text-slate-800">{f.client_name || f.title || `Follow-up #${f.id}`}</p>
@@ -334,7 +453,10 @@ export default function FinanceDashboard({ currentUser, onNavigate }) {
                       </span>
                     </div>
                   </div>
-                  <span className={`text-[10px] font-bold px-2 py-1 rounded-full shrink-0 ${urgencyBg(days)}`}>
+                  <span
+                    className="text-[10px] font-bold px-2 py-1 rounded-full shrink-0"
+                    style={{ background: urgent ? '#fdecec' : '#eef2f7', color: urgent ? RED_TEXT : '#475569' }}
+                  >
                     {days === null ? 'No date' : days < 0 ? 'Overdue' : days === 0 ? 'Today' : 'Upcoming'}
                   </span>
                 </div>
@@ -344,12 +466,11 @@ export default function FinanceDashboard({ currentUser, onNavigate }) {
         </div>
 
         {/* PERMITS EXPIRATION */}
-        <div className="p-5 bg-white border shadow-sm rounded-2xl border-slate-200">
+        <div className="p-5 bg-white border shadow-sm rounded-2xl border-slate-100">
           <SectionHeader
             icon={FaIdCard}
             title="Permits Expiration"
             count={filteredPermits.length}
-            accent="bg-red-500"
           />
 
           {/* Filter + Search */}
@@ -361,7 +482,7 @@ export default function FinanceDashboard({ currentUser, onNavigate }) {
                 value={search}
                 onChange={e => setSearch(e.target.value)}
                 placeholder="Search client..."
-                className="w-full pl-7 pr-3 py-1.5 text-xs border border-slate-200 rounded-lg focus:outline-none focus:border-blue-400"
+                className="w-full pl-7 pr-3 py-1.5 text-xs border border-slate-200 rounded-lg focus:outline-none focus:border-slate-400"
               />
             </div>
             <div className="flex gap-1 p-0.5 bg-slate-100 rounded-lg">
@@ -383,30 +504,35 @@ export default function FinanceDashboard({ currentUser, onNavigate }) {
             </div>
           </div>
 
-          <div className="pr-1 space-y-2 overflow-y-auto max-h-64">
+          <div className="pr-1 space-y-1 overflow-y-auto max-h-64">
             {filteredPermits.length === 0 ? <Empty label="No permits to show" /> : filteredPermits.map((p, i) => {
               const days = daysUntil(p.date_of_expiration);
+              const urgent = days !== null && days <= 30;
               return (
-                <div key={p.id || i} className="flex items-center gap-3 p-3 transition border border-transparent rounded-xl hover:bg-slate-50 hover:border-slate-100">
-                  <div className={`shrink-0 w-9 h-9 rounded-lg flex items-center justify-center ${
-                    days < 0 ? 'bg-red-100' : days <= 7 ? 'bg-red-50' : days <= 30 ? 'bg-amber-50' : 'bg-emerald-50'
-                  }`}>
-                    <FaIdCard size={13} className={urgencyColor(days)} />
+                <div key={p.id || i} className="flex items-center gap-3 p-2.5 transition rounded-xl hover:bg-slate-50">
+                  <div
+                    className="flex items-center justify-center rounded-lg w-9 h-9 shrink-0"
+                    style={{ background: urgent ? '#fdecec' : MINT_SOFT }}
+                  >
+                    <FaIdCard size={13} style={{ color: urgent ? RED_TEXT : '#15803d' }} />
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-semibold truncate text-slate-800">{p.business_name || p.client_id}</p>
                     <div className="flex items-center gap-2 mt-0.5">
                       {p.account && (
-                        <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${
-                          p.account === 'Summit' ? 'bg-sky-100 text-sky-700' : 'bg-violet-100 text-violet-700'
-                        }`}>{p.account}</span>
+                        <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-slate-100 text-slate-600">
+                          {p.account}
+                        </span>
                       )}
                       <span className="text-[10px] text-slate-400 flex items-center gap-1">
                         <FaCalendarAlt size={8} /> {fmtDate(p.date_of_expiration)}
                       </span>
                     </div>
                   </div>
-                  <span className={`text-[10px] font-bold px-2 py-1 rounded-full shrink-0 ${urgencyBg(days)}`}>
+                  <span
+                    className="text-[10px] font-bold px-2 py-1 rounded-full shrink-0"
+                    style={{ background: urgent ? '#fdecec' : MINT_SOFT, color: urgent ? RED_TEXT : '#15803d' }}
+                  >
                     {days < 0
                       ? `${Math.abs(days)}d ago`
                       : days === 0 ? 'Today'
@@ -420,18 +546,17 @@ export default function FinanceDashboard({ currentUser, onNavigate }) {
           {/* Legend */}
           <div className="flex flex-wrap items-center gap-4 pt-3 mt-3 border-t border-slate-100">
             {[
-              { dot: 'bg-red-500',   label: 'Expired' },
-              { dot: 'bg-amber-400', label: '≤30 days' },
-              { dot: 'bg-emerald-500', label: 'OK' },
+              { color: RED_TEXT, label: 'Expired / ≤30 days' },
+              { color: '#15803d', label: 'OK' },
             ].map(l => (
               <div key={l.label} className="flex items-center gap-1.5">
-                <div className={`w-2 h-2 rounded-full ${l.dot}`} />
+                <div className="w-2 h-2 rounded-full" style={{ background: l.color }} />
                 <span className="text-[10px] text-slate-500">{l.label}</span>
               </div>
             ))}
             <span className="ml-auto text-[10px] text-slate-400">
               {permits.filter(p => daysUntil(p.date_of_expiration) < 0).length} expired ·{' '}
-              {permits.filter(p => { const d = daysUntil(p.date_of_expiration); return d !== null && d >= 0 && d <= 30; }).length} expiring soon
+              {expiringPermitsCount} expiring soon
             </span>
           </div>
         </div>

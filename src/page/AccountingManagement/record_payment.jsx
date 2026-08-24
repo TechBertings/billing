@@ -9,12 +9,13 @@ import {
   FaCheckCircle,
   FaArrowLeft,
   FaFileInvoiceDollar,
+  FaUndo,
 } from "react-icons/fa";
-
 const inputCls =
   "w-full px-3 py-2 text-sm border border-gray-200 rounded-md focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-100 bg-white transition";
 const labelCls = "block text-xs font-medium text-gray-500 mb-1";
 const GREEN = "#1a5c2e";
+const RED = "#c0392b";
 
 function fmt(n) {
   return Number(n || 0).toLocaleString("en-PH", {
@@ -35,24 +36,27 @@ function fmtDate(d) {
 const PAYMENT_METHODS = [
   { value: "cash", label: "Cash" },
   { value: "cheque", label: "Cheque" },
-  { value: "bank_transfer_chinabank", label: "Bank Transfer — China Bank" },
-  { value: "bank_transfer_bdo", label: "Bank Transfer — BDO" },
+  { value: "bank_transfer", label: "Bank Transfer" },
   { value: "other", label: "Other" },
 ];
 
-// OR-{YYYYMM}-{0001} — same numbering pattern as generateSOANumber() in CreateBilling.jsx
-const generateORNumber = async () => {
+const RECEIVING_BANKS = [
+  { value: "bdo", label: "BDO" },
+  { value: "chinabank", label: "Chinabank" },
+];
+
+// INV-{YYYYMM}-{0001} — same numbering pattern as generateSOANumber() in CreateBilling.jsx
+const generateInvoiceNumber = async () => {
   const now = new Date();
   const yr = now.getFullYear();
-  const mo = String(now.getMonth() + 1).padStart(2, "0");
-  const prefix = `OR-${yr}${mo}-`;
+  const prefix = `INV-${yr}-`;
   const { data } = await supabase
     .from("official_receipts")
-    .select("or_number")
-    .ilike("or_number", `${prefix}%`)
-    .order("or_number", { ascending: false })
+    .select("invoice_number")
+    .ilike("invoice_number", `${prefix}%`)
+    .order("invoice_number", { ascending: false })
     .limit(1);
-  const last = data?.[0]?.or_number?.split("-").pop();
+  const last = data?.[0]?.invoice_number?.split("-").pop();
   const next = String((parseInt(last) || 0) + 1).padStart(4, "0");
   return `${prefix}${next}`;
 };
@@ -101,15 +105,38 @@ export default function RecordPayment({
   const [itemsLoading, setItemsLoading] = useState(false);
 
   // ── Form ──
-  const [orNumber, setOrNumber] = useState("Generating...");
-  const [paymentDate, setPaymentDate] = useState(
+  const [invoiceNumber, setInvoiceNumber] = useState("Generating...");
+  const [collectionDate, setCollectionDate] = useState(
     new Date().toISOString().split("T")[0],
   );
+  const [chequeNumber, setChequeNumber] = useState("");
+  const [chequeBank, setChequeBank] = useState("");
+  const [draweeBank, setDraweeBank] = useState("");
+  const [receivingBank, setReceivingBank] = useState("");
+  const [collectedBy, setCollectedBy] = useState("");
   const [amount, setAmount] = useState("");
   const [paymentMethod, setPaymentMethod] = useState("cash");
   const [referenceNumber, setReferenceNumber] = useState("");
   const [notes, setNotes] = useState("");
 
+  const [showReversalModal, setShowReversalModal] = useState(false);
+  const [reversalOrNumber, setReversalOrNumber] = useState("");
+  const [reversalDate, setReversalDate] = useState(
+    new Date().toISOString().split("T")[0],
+  );
+  const [reversalReason, setReversalReason] = useState("");
+  const [reversing, setReversing] = useState(false);
+  const [reversalSearch, setReversalSearch] = useState("");
+  const [reversalResults, setReversalResults] = useState([]);
+  const [reversalSearchLoading, setReversalSearchLoading] = useState(false);
+  const [showReversalDrop, setShowReversalDrop] = useState(false);
+  const [selectedReversalReceipt, setSelectedReversalReceipt] = useState(null);
+  const reversalRef = useRef(null);
+  const [reversalDateFrom, setReversalDateFrom] = useState("");
+  const [reversalDateTo, setReversalDateTo] = useState("");
+  const [paymentDate, setPaymentDate] = useState(
+    new Date().toISOString().split("T")[0],
+  );
   // ── UI ──
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
@@ -119,7 +146,7 @@ export default function RecordPayment({
     currentUser?.fullName || currentUser?.full_name || "Unknown";
 
   useEffect(() => {
-    generateORNumber().then(setOrNumber);
+    generateInvoiceNumber().then(setInvoiceNumber);
   }, []);
 
   useEffect(() => {
@@ -248,7 +275,8 @@ export default function RecordPayment({
       if (itErr) throw itErr;
       const chargeTotals = {};
       (items || []).forEach((i) => {
-        chargeTotals[i.billing_id] = (chargeTotals[i.billing_id] || 0) + (Number(i.amount) || 0);
+        chargeTotals[i.billing_id] =
+          (chargeTotals[i.billing_id] || 0) + (Number(i.amount) || 0);
       });
 
       // Payments already applied directly to these SOAs
@@ -259,7 +287,8 @@ export default function RecordPayment({
       if (orErr) throw orErr;
       const paidTotals = {};
       (receipts || []).forEach((r) => {
-        paidTotals[r.billing_id] = (paidTotals[r.billing_id] || 0) + (Number(r.amount) || 0);
+        paidTotals[r.billing_id] =
+          (paidTotals[r.billing_id] || 0) + (Number(r.amount) || 0);
       });
 
       const withBalance = (statements || [])
@@ -285,11 +314,118 @@ export default function RecordPayment({
     if (selectedClient) fetchOutstandingSOAs(selectedClient);
   }, [selectedClient, fetchOutstandingSOAs]);
 
+  const searchReversalReceipts = useCallback(async (term, dateFrom, dateTo) => {
+    setReversalSearchLoading(true);
+    try {
+      let query = supabase
+        .from("official_receipts")
+        .select(
+          "id, invoice_number, client_id, amount, payment_date, payment_method, notes",
+        )
+        .order("payment_date", { ascending: false })
+        .limit(10);
+
+      if (term.trim()) {
+        query = query.ilike("invoice_number", `%${term.trim()}%`);
+      }
+      if (dateFrom) {
+        query = query.gte("payment_date", dateFrom);
+      }
+      if (dateTo) {
+        query = query.lte("payment_date", dateTo);
+      }
+
+      const { data, error } = await query;
+      if (error || !data) {
+        setReversalResults([]);
+        return;
+      }
+
+      const clientIds = [
+        ...new Set(data.map((r) => r.client_id).filter(Boolean)),
+      ];
+      let clientMap = {};
+      if (clientIds.length > 0) {
+        const { data: clients } = await supabase
+          .from("client_profile")
+          .select(
+            "client_id, business_name, first_name, middle_name, last_name",
+          )
+          .in("client_id", clientIds);
+        (clients || []).forEach((c) => {
+          clientMap[c.client_id] = c;
+        });
+      }
+
+      setReversalResults(
+        data.map((r) => {
+          const c = clientMap[r.client_id];
+          const clientName = c
+            ? c.business_name ||
+              [c.first_name, c.middle_name, c.last_name]
+                .filter(Boolean)
+                .join(" ") ||
+              r.client_id
+            : r.client_id || "Unknown client";
+          return { ...r, clientName };
+        }),
+      );
+    } finally {
+      setReversalSearchLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (selectedReversalReceipt) return;
+    const t = setTimeout(
+      () =>
+        searchReversalReceipts(
+          reversalSearch,
+          reversalDateFrom,
+          reversalDateTo,
+        ),
+      300,
+    );
+    return () => clearTimeout(t);
+  }, [
+    reversalSearch,
+    reversalDateFrom,
+    reversalDateTo,
+    selectedReversalReceipt,
+    searchReversalReceipts,
+  ]);
+
+  useEffect(() => {
+    const handler = (e) => {
+      if (reversalRef.current && !reversalRef.current.contains(e.target))
+        setShowReversalDrop(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
+  const pickReversalReceipt = (r) => {
+    setSelectedReversalReceipt(r);
+    setReversalOrNumber(r.invoice_number);
+    setReversalSearch(r.invoice_number);
+    setShowReversalDrop(false);
+    setReversalResults([]);
+  };
+
+  const clearReversalReceipt = () => {
+    setSelectedReversalReceipt(null);
+    setReversalOrNumber("");
+    setReversalSearch("");
+  };
+
   useEffect(() => {
     setSoaPage(1);
   }, [outstandingSOAs.length, selectedClient]);
 
-  const soaTotalPages = Math.max(1, Math.ceil(outstandingSOAs.length / SOA_PAGE_SIZE));
+  const soaTotalPages = Math.max(
+    1,
+    Math.ceil(outstandingSOAs.length / SOA_PAGE_SIZE),
+  );
   const paginatedSOAs = outstandingSOAs.slice(
     (soaPage - 1) * SOA_PAGE_SIZE,
     soaPage * SOA_PAGE_SIZE,
@@ -339,22 +475,25 @@ export default function RecordPayment({
     setMessage("");
     try {
       const amt = Math.min(clientCredit, selectedBilling.balance);
-      const creditOrNumber = await generateORNumber();
+      const creditInvoiceNumber = await generateInvoiceNumber();
 
       const { data, error } = await supabase
         .from("official_receipts")
-        .insert([{
-          or_number: creditOrNumber,
-          client_id: selectedClient.client_id,
-          billing_id: selectedBilling.id,
-          soa_number: selectedBilling.soa_number,
-          amount: amt,
-          payment_date: today_(),
-          payment_method: "credit",
-          reference_number: null,
-          notes: "Applied from client credit balance",
-          received_by: userFullName,
-        }])
+        .insert([
+          {
+            invoice_number: creditInvoiceNumber,
+            client_id: selectedClient.client_id,
+            billing_id: selectedBilling.id,
+            soa_number: selectedBilling.soa_number,
+            amount: amt,
+            payment_date: today_(),
+            payment_method: "credit",
+            reference_number: null,
+            notes: "Applied from client credit balance",
+            collected_by: null,
+            recorded_by: userFullName,
+          },
+        ])
         .select()
         .single();
       if (error) throw error;
@@ -370,10 +509,15 @@ export default function RecordPayment({
       // Flip SOA to paid if this fully settles it
       const newBalance = selectedBilling.balance - amt;
       if (newBalance <= 0.005) {
-        await supabase.from("billing_statements").update({ status: "paid" }).eq("id", selectedBilling.id);
+        await supabase
+          .from("billing_statements")
+          .update({ status: "paid" })
+          .eq("id", selectedBilling.id);
       }
 
-      setMessage(`₱${fmt(amt)} credit applied to ${selectedBilling.soa_number}.`);
+      setMessage(
+        `₱${fmt(amt)} credit applied to ${selectedBilling.soa_number}.`,
+      );
       setMessageType("success");
       onSaved?.(data);
 
@@ -393,11 +537,16 @@ export default function RecordPayment({
     return new Date().toISOString().split("T")[0];
   }
 
-  const itemsTotal = billingItems.reduce((sum, it) => sum + Number(it.amount || 0), 0);
+  const itemsTotal = billingItems.reduce(
+    (sum, it) => sum + Number(it.amount || 0),
+    0,
+  );
   // FIX: "Use SOA total" should default to the *remaining balance*, not the
   // full original SOA amount — otherwise a partially-paid SOA would let you
   // accidentally overpay by prefilling the original total again.
-  const remainingBalance = selectedBilling ? selectedBilling.balance : itemsTotal;
+  const remainingBalance = selectedBilling
+    ? selectedBilling.balance
+    : itemsTotal;
 
   // ── Submit ──
   const validate = () => {
@@ -412,8 +561,8 @@ export default function RecordPayment({
       setMessageType("error");
       return false;
     }
-    if (!paymentDate) {
-      setMessage("Please select a payment date.");
+    if (!collectionDate) {
+      setMessage("Please select a collection date.");
       setMessageType("error");
       return false;
     }
@@ -427,18 +576,33 @@ export default function RecordPayment({
     try {
       const paidAmount = parseFloat(amount);
       const payload = {
-        or_number: orNumber,
+        invoice_number: invoiceNumber,
         client_id: selectedClient.client_id,
         billing_id: selectedBilling?.id || null,
         soa_number: selectedBilling?.soa_number || null,
         amount: paidAmount,
-        payment_date: paymentDate,
+        payment_date: collectionDate,
         payment_method: paymentMethod,
         reference_number: referenceNumber || null,
+        cheque_number: paymentMethod === "cheque" ? chequeNumber || null : null,
+        cheque_bank: paymentMethod === "cheque" ? chequeBank || null : null,
+        drawee_bank:
+          paymentMethod === "cheque" || paymentMethod === "bank_transfer"
+            ? draweeBank || null
+            : null,
+        receiving_bank:
+          paymentMethod === "bank_transfer" ? receivingBank || null : null,
         notes: notes || null,
-        received_by: userFullName,
+        collected_by:
+          paymentMethod === "cash" || paymentMethod === "cheque"
+            ? collectedBy || null
+            : null, // Collected by — manual, cash & cheque
+        recorded_by: userFullName,
+        deposit_status:
+          paymentMethod === "bank_transfer" ? "deposited" : "undeposited",
+        deposited_date:
+          paymentMethod === "bank_transfer" ? collectionDate : null,
       };
-
       const { data, error } = await supabase
         .from("official_receipts")
         .insert([payload])
@@ -459,7 +623,8 @@ export default function RecordPayment({
             .from("billing_statements")
             .update({ status: "paid" })
             .eq("id", selectedBilling.id);
-          if (statusErr) console.error("Failed to update SOA status to paid:", statusErr);
+          if (statusErr)
+            console.error("Failed to update SOA status to paid:", statusErr);
         }
         if (newBalance < -0.005) {
           const overpayment = Math.abs(newBalance);
@@ -471,36 +636,118 @@ export default function RecordPayment({
           if (existing) {
             await supabase
               .from("client_credits")
-              .update({ balance: Number(existing.balance) + overpayment, updated_at: new Date().toISOString() })
+              .update({
+                balance: Number(existing.balance) + overpayment,
+                updated_at: new Date().toISOString(),
+              })
               .eq("client_id", selectedClient.client_id);
           } else {
             await supabase
               .from("client_credits")
-              .insert([{ client_id: selectedClient.client_id, balance: overpayment }]);
+              .insert([
+                { client_id: selectedClient.client_id, balance: overpayment },
+              ]);
           }
         }
       }
 
-      setMessage(`Payment ${orNumber} recorded successfully.`);
+      setMessage(`Invoice ${invoiceNumber} recorded successfully.`);
       setMessageType("success");
       onSaved?.(data);
 
-      // FIX: refresh state in place instead of relying on onClose/unmount —
-      // previously the Outstanding Statements list only updated if the
-      // component re-mounted, so a fully-paid SOA lingered until manual refresh.
       await fetchOutstandingSOAs(selectedClient);
       await fetchClientCredit(selectedClient);
       setSelectedBilling(null);
       setBillingItems([]);
       setAmount("");
       setReferenceNumber("");
+      setChequeNumber("");
+      setChequeBank("");
+      setDraweeBank("");
+      setReceivingBank("");
+      setCollectedBy("");
       setNotes("");
-      generateORNumber().then(setOrNumber);
+      generateInvoiceNumber().then(setInvoiceNumber);
     } catch (err) {
       setMessage(`Error: ${err.message}`);
       setMessageType("error");
     }
     setSaving(false);
+  };
+
+  const handleReversal = async () => {
+    if (!reversalOrNumber.trim() || !reversalDate) {
+      setMessage("OR Number and reversal date are required.");
+      setMessageType("error");
+      return;
+    }
+    setReversing(true);
+    setMessage("");
+    try {
+      const { data: original, error: findErr } = await supabase
+        .from("official_receipts")
+        .select("*")
+        .eq("invoice_number", reversalOrNumber.trim())
+        .maybeSingle();
+      if (findErr) throw findErr;
+      if (!original) {
+        setMessage(`OR ${reversalOrNumber} not found.`);
+        setMessageType("error");
+        setReversing(false);
+        return;
+      }
+
+      const reversalInvoiceNumber = await generateInvoiceNumber();
+      const { data, error } = await supabase
+        .from("official_receipts")
+        .insert([
+          {
+            invoice_number: reversalInvoiceNumber,
+            client_id: original.client_id,
+            billing_id: original.billing_id,
+            soa_number: original.soa_number,
+            amount: -Math.abs(original.amount),
+            payment_date: paymentDate,
+            payment_method: original.payment_method,
+            reference_number: original.reference_number,
+            notes: `Reversal of Invoice ${original.invoice_number} (recorded ${reversalDate})${reversalReason ? " — " + reversalReason : ""}`,
+            collected_by: original.collected_by,
+            recorded_by: userFullName,
+          },
+        ])
+        .select()
+        .single();
+      if (error) throw error;
+
+      if (original.billing_id) {
+        await supabase
+          .from("billing_statements")
+          .update({ status: "approved" })
+          .eq("id", original.billing_id);
+      }
+
+      setMessage(
+        `Reversal recorded against Invoice ${original.invoice_number}.`,
+      );
+      setMessageType("success");
+      onSaved?.(data);
+      setShowReversalModal(false);
+      setReversalOrNumber("");
+      setReversalReason("");
+      setReversalDate(new Date().toISOString().split("T")[0]);
+      setPaymentDate(new Date().toISOString().split("T")[0]);
+      setReversalDateFrom("");
+      setReversalDateTo("");
+      clearReversalReceipt();
+      if (selectedClient) {
+        await fetchOutstandingSOAs(selectedClient);
+        await fetchClientCredit(selectedClient);
+      }
+    } catch (err) {
+      setMessage(`Error: ${err.message}`);
+      setMessageType("error");
+    }
+    setReversing(false);
   };
 
   return (
@@ -521,19 +768,32 @@ export default function RecordPayment({
             <FaMoneyBillWave size={14} style={{ color: GREEN }} />
           </div>
           <div>
-            <h1 className="text-sm font-semibold text-gray-800">Record Payment</h1>
-            <p className="font-mono text-xs text-gray-400">{orNumber}</p>
+            <h1 className="text-sm font-semibold text-gray-800">
+              Record Payment
+            </h1>
+            <p className="font-mono text-xs text-gray-400">
+              Invoice {invoiceNumber}
+            </p>
           </div>
         </div>
-        <button
-          onClick={handleSubmit}
-          disabled={saving}
-          className="flex items-center gap-2 px-5 py-2.5 text-sm font-medium text-white transition rounded-md disabled:opacity-50"
-          style={{ background: GREEN }}
-        >
-          <FaReceipt size={12} />
-          {saving ? "Saving..." : "Record Payment"}
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowReversalModal(true)}
+            className="flex items-center gap-2 px-4 py-2.5 text-sm font-medium text-red-600 transition border border-red-200 rounded-md hover:bg-red-50"
+          >
+            <FaUndo size={12} />
+            Reversal Entry
+          </button>
+          <button
+            onClick={handleSubmit}
+            disabled={saving}
+            className="flex items-center gap-2 px-5 py-2.5 text-sm font-medium text-white transition rounded-md disabled:opacity-50"
+            style={{ background: GREEN }}
+          >
+            <FaReceipt size={12} />
+            {saving ? "Saving..." : "Record Payment"}
+          </button>
+        </div>
       </div>
 
       {/* Message */}
@@ -596,7 +856,9 @@ export default function RecordPayment({
                             <p className="text-sm font-medium text-gray-800">
                               {getClientPrimaryName(c)}
                             </p>
-                            <p className="font-mono text-xs text-gray-400">{c.client_id}</p>
+                            <p className="font-mono text-xs text-gray-400">
+                              {c.client_id}
+                            </p>
                           </div>
                         </button>
                       ))}
@@ -631,10 +893,23 @@ export default function RecordPayment({
 
           {/* Client credit balance — from past overpayments */}
           {selectedClient && !creditLoading && clientCredit > 0.005 && (
-            <div className="flex items-center justify-between px-4 py-3 border rounded-xl" style={{ borderColor: "#bfe3cb", background: "#e8f5ec" }}>
+            <div
+              className="flex items-center justify-between px-4 py-3 border rounded-xl"
+              style={{ borderColor: "#bfe3cb", background: "#e8f5ec" }}
+            >
               <div>
-                <p className="text-xs font-semibold tracking-wide uppercase" style={{ color: GREEN }}>Available Credit</p>
-                <p className="font-mono text-lg font-bold" style={{ color: GREEN }}>₱{fmt(clientCredit)}</p>
+                <p
+                  className="text-xs font-semibold tracking-wide uppercase"
+                  style={{ color: GREEN }}
+                >
+                  Available Credit
+                </p>
+                <p
+                  className="font-mono text-lg font-bold"
+                  style={{ color: GREEN }}
+                >
+                  ₱{fmt(clientCredit)}
+                </p>
               </div>
               {selectedBilling && (
                 <button
@@ -643,7 +918,9 @@ export default function RecordPayment({
                   className="px-3 py-2 text-xs font-semibold text-white transition rounded-md disabled:opacity-50"
                   style={{ background: GREEN }}
                 >
-                  {applyingCredit ? "Applying..." : `Apply to ${selectedBilling.soa_number}`}
+                  {applyingCredit
+                    ? "Applying..."
+                    : `Apply to ${selectedBilling.soa_number}`}
                 </button>
               )}
             </div>
@@ -672,7 +949,9 @@ export default function RecordPayment({
                         : "border-gray-200 hover:bg-gray-50"
                     }`}
                   >
-                    <span className="text-gray-500">General / unapplied payment</span>
+                    <span className="text-gray-500">
+                      General / unapplied payment
+                    </span>
                     {selectedBilling === null && (
                       <FaCheckCircle size={11} style={{ color: GREEN }} />
                     )}
@@ -693,14 +972,25 @@ export default function RecordPayment({
                         </p>
                         <p className="text-gray-400">
                           Due {fmtDate(b.due_date)}
-                          {b.paid > 0 && <span className="text-blue-500"> · partially paid</span>}
+                          {b.paid > 0 && (
+                            <span className="text-blue-500">
+                              {" "}
+                              · partially paid
+                            </span>
+                          )}
                         </p>
                       </div>
                       <div className="text-right">
                         {selectedBilling?.id === b.id && (
-                          <FaCheckCircle size={11} style={{ color: GREEN }} className="inline mb-1" />
+                          <FaCheckCircle
+                            size={11}
+                            style={{ color: GREEN }}
+                            className="inline mb-1"
+                          />
                         )}
-                        <p className="font-mono font-semibold text-gray-700">₱{fmt(b.balance)}</p>
+                        <p className="font-mono font-semibold text-gray-700">
+                          ₱{fmt(b.balance)}
+                        </p>
                         <p className="text-[10px] text-gray-400">balance</p>
                       </div>
                     </button>
@@ -710,7 +1000,12 @@ export default function RecordPayment({
                   {outstandingSOAs.length > SOA_PAGE_SIZE && (
                     <div className="flex items-center justify-between pt-2 mt-2 border-t border-gray-100">
                       <span className="text-[11px] text-gray-400">
-                        {(soaPage - 1) * SOA_PAGE_SIZE + 1}–{Math.min(soaPage * SOA_PAGE_SIZE, outstandingSOAs.length)} of {outstandingSOAs.length}
+                        {(soaPage - 1) * SOA_PAGE_SIZE + 1}–
+                        {Math.min(
+                          soaPage * SOA_PAGE_SIZE,
+                          outstandingSOAs.length,
+                        )}{" "}
+                        of {outstandingSOAs.length}
                       </span>
                       <div className="flex items-center gap-1.5">
                         <button
@@ -720,9 +1015,13 @@ export default function RecordPayment({
                         >
                           Prev
                         </button>
-                        <span className="text-[11px] text-gray-500">{soaPage}/{soaTotalPages}</span>
+                        <span className="text-[11px] text-gray-500">
+                          {soaPage}/{soaTotalPages}
+                        </span>
                         <button
-                          onClick={() => setSoaPage((p) => Math.min(soaTotalPages, p + 1))}
+                          onClick={() =>
+                            setSoaPage((p) => Math.min(soaTotalPages, p + 1))
+                          }
                           disabled={soaPage === soaTotalPages}
                           className="px-2 py-1 text-[11px] border border-gray-200 rounded-md hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed transition"
                         >
@@ -766,18 +1065,32 @@ export default function RecordPayment({
                   <table className="w-full text-xs">
                     <thead className="text-gray-500 bg-gray-50">
                       <tr>
-                        <th className="px-3 py-2 font-medium text-left">Agency</th>
-                        <th className="px-3 py-2 font-medium text-left">Description</th>
-                        <th className="px-3 py-2 font-medium text-left">Period</th>
-                        <th className="px-3 py-2 font-medium text-right">Amount</th>
+                        <th className="px-3 py-2 font-medium text-left">
+                          Agency
+                        </th>
+                        <th className="px-3 py-2 font-medium text-left">
+                          Description
+                        </th>
+                        <th className="px-3 py-2 font-medium text-left">
+                          Period
+                        </th>
+                        <th className="px-3 py-2 font-medium text-right">
+                          Amount
+                        </th>
                       </tr>
                     </thead>
                     <tbody>
                       {billingItems.map((it) => (
                         <tr key={it.id} className="border-t border-gray-50">
-                          <td className="px-3 py-2 text-gray-700">{it.agency || "—"}</td>
-                          <td className="px-3 py-2 text-gray-600">{it.description || "—"}</td>
-                          <td className="px-3 py-2 text-gray-400">{it.period_covered || "—"}</td>
+                          <td className="px-3 py-2 text-gray-700">
+                            {it.agency || "—"}
+                          </td>
+                          <td className="px-3 py-2 text-gray-600">
+                            {it.description || "—"}
+                          </td>
+                          <td className="px-3 py-2 text-gray-400">
+                            {it.period_covered || "—"}
+                          </td>
                           <td className="px-3 py-2 font-mono text-right text-gray-700">
                             ₱{fmt(it.amount)}
                           </td>
@@ -786,7 +1099,10 @@ export default function RecordPayment({
                     </tbody>
                     <tfoot>
                       <tr className="border-t border-gray-200 bg-gray-50">
-                        <td colSpan={3} className="px-3 py-2 font-medium text-right text-gray-600">
+                        <td
+                          colSpan={3}
+                          className="px-3 py-2 font-medium text-right text-gray-600"
+                        >
                           SOA Total
                         </td>
                         <td className="px-3 py-2 font-mono font-semibold text-right text-gray-600">
@@ -795,7 +1111,10 @@ export default function RecordPayment({
                       </tr>
                       {selectedBilling.paid > 0 && (
                         <tr className="border-t border-gray-100 bg-gray-50">
-                          <td colSpan={3} className="px-3 py-2 text-right text-gray-500">
+                          <td
+                            colSpan={3}
+                            className="px-3 py-2 text-right text-gray-500"
+                          >
                             Already paid
                           </td>
                           <td className="px-3 py-2 font-mono text-right text-gray-500">
@@ -804,10 +1123,16 @@ export default function RecordPayment({
                         </tr>
                       )}
                       <tr className="border-t border-gray-200 bg-gray-50">
-                        <td colSpan={3} className="px-3 py-2 font-semibold text-right text-gray-700">
+                        <td
+                          colSpan={3}
+                          className="px-3 py-2 font-semibold text-right text-gray-700"
+                        >
                           Remaining Balance
                         </td>
-                        <td className="px-3 py-2 font-mono font-bold text-right" style={{ color: GREEN }}>
+                        <td
+                          className="px-3 py-2 font-mono font-bold text-right"
+                          style={{ color: GREEN }}
+                        >
                           ₱{fmt(remainingBalance)}
                         </td>
                       </tr>
@@ -822,11 +1147,11 @@ export default function RecordPayment({
           <div className="p-5 space-y-4 bg-white border border-gray-100 rounded-xl">
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className={labelCls}>Payment Date</label>
+                <label className={labelCls}>Collection Date</label>
                 <input
                   type="date"
-                  value={paymentDate}
-                  onChange={(e) => setPaymentDate(e.target.value)}
+                  value={collectionDate}
+                  onChange={(e) => setCollectionDate(e.target.value)}
                   className={inputCls}
                 />
               </div>
@@ -855,11 +1180,14 @@ export default function RecordPayment({
                     Use remaining balance (₱{fmt(remainingBalance)})
                   </button>
                 )}
-                {selectedBilling && parseFloat(amount) > remainingBalance + 0.005 && (
-                  <p className="mt-1 text-[11px] text-amber-600">
-                    This exceeds the remaining balance by ₱{fmt(parseFloat(amount) - remainingBalance)} — the excess will be recorded but won't apply to this SOA.
-                  </p>
-                )}
+                {selectedBilling &&
+                  parseFloat(amount) > remainingBalance + 0.005 && (
+                    <p className="mt-1 text-[11px] text-amber-600">
+                      This exceeds the remaining balance by ₱
+                      {fmt(parseFloat(amount) - remainingBalance)} — the excess
+                      will be recorded but won't apply to this SOA.
+                    </p>
+                  )}
               </div>
             </div>
 
@@ -888,6 +1216,70 @@ export default function RecordPayment({
                   className={inputCls}
                 />
               </div>
+              {paymentMethod === "cheque" && (
+                <div className="grid grid-cols-3 gap-3">
+                  <div>
+                    <label className={labelCls}>Cheque Number</label>
+                    <input
+                      type="text"
+                      value={chequeNumber}
+                      onChange={(e) => setChequeNumber(e.target.value)}
+                      placeholder="e.g. 0001234"
+                      className={inputCls}
+                    />
+                  </div>
+                  <div>
+                    <label className={labelCls}>Cheque Bank</label>
+                    <input
+                      type="text"
+                      value={chequeBank}
+                      onChange={(e) => setChequeBank(e.target.value)}
+                      placeholder="Issuing bank"
+                      className={inputCls}
+                    />
+                  </div>
+                  <div>
+                    <label className={labelCls}>Drawee Bank</label>
+                    <input
+                      type="text"
+                      value={draweeBank}
+                      onChange={(e) => setDraweeBank(e.target.value)}
+                      placeholder="Bank the cheque is drawn from"
+                      className={inputCls}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {paymentMethod === "bank_transfer" && (
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className={labelCls}>Drawee Bank</label>
+                    <input
+                      type="text"
+                      value={draweeBank}
+                      onChange={(e) => setDraweeBank(e.target.value)}
+                      placeholder="Client's originating bank"
+                      className={inputCls}
+                    />
+                  </div>
+                  <div>
+                    <label className={labelCls}>Receiving Bank</label>
+                    <select
+                      value={receivingBank}
+                      onChange={(e) => setReceivingBank(e.target.value)}
+                      className={inputCls}
+                    >
+                      <option value="">Select bank...</option>
+                      {RECEIVING_BANKS.map((b) => (
+                        <option key={b.value} value={b.value}>
+                          {b.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              )}
             </div>
 
             <div>
@@ -901,19 +1293,226 @@ export default function RecordPayment({
               />
             </div>
 
-            <div>
-              <label className={labelCls}>Received By</label>
-              <input
-                type="text"
-                value={userFullName}
-                readOnly
-                disabled
-                className="w-full px-3 py-2 text-sm text-gray-500 border border-gray-100 rounded-md cursor-not-allowed bg-gray-50"
-              />
+            <div
+              className={`grid gap-3 ${
+                paymentMethod === "cash" || paymentMethod === "cheque"
+                  ? "grid-cols-2"
+                  : "grid-cols-1"
+              }`}
+            >
+              {(paymentMethod === "cash" || paymentMethod === "cheque") && (
+                <div>
+                  <label className={labelCls}>Collected by:</label>
+                  <input
+                    type="text"
+                    value={collectedBy}
+                    onChange={(e) => setCollectedBy(e.target.value)}
+                    placeholder={
+                      paymentMethod === "cash"
+                        ? "Name of person who collected the cash"
+                        : "Name of person who collected the cheque"
+                    }
+                    className={inputCls}
+                  />
+                </div>
+              )}
+              <div>
+                <label className={labelCls}>Recorded by:</label>
+                <input
+                  type="text"
+                  value={userFullName}
+                  readOnly
+                  disabled
+                  className="w-full px-3 py-2 text-sm text-gray-500 border border-gray-100 rounded-md cursor-not-allowed bg-gray-50"
+                />
+              </div>
             </div>
           </div>
         </div>
       </div>
+
+      {showReversalModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60">
+          <div className="w-full max-w-md p-5 bg-white shadow-2xl rounded-xl">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-sm font-semibold text-gray-800">
+                Reversal Entry
+              </h2>
+              <button
+                onClick={() => setShowReversalModal(false)}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <FaTimes size={14} />
+              </button>
+            </div>
+            <div className="space-y-3">
+              <div className="relative" ref={reversalRef}>
+                <label className={labelCls}>Invoice to reverse</label>
+                {!selectedReversalReceipt ? (
+                  <>
+                    <div style={{ position: "relative" }}>
+                      <FaSearch
+                        className="absolute text-gray-300 -translate-y-1/2 left-3 top-1/2"
+                        size={12}
+                      />
+                      <input
+                        type="text"
+                        value={reversalSearch}
+                        onChange={(e) => {
+                          setReversalSearch(e.target.value);
+                          setReversalOrNumber(e.target.value);
+                          setShowReversalDrop(true);
+                        }}
+                        onFocus={() => {
+                          searchReversalReceipts(
+                            reversalSearch,
+                            reversalDateFrom,
+                            reversalDateTo,
+                          );
+                          setShowReversalDrop(true);
+                        }}
+                        placeholder="Search invoice no., client..."
+                        className="w-full py-2 pr-8 text-sm border border-gray-200 rounded-md pl-9 focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-100"
+                      />
+                      {reversalSearchLoading && (
+                        <div className="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />
+                      )}
+                    </div>
+                    {showReversalDrop && reversalResults.length > 0 && (
+                      <div className="absolute left-0 right-0 z-30 mt-1 overflow-hidden overflow-y-auto bg-white border border-gray-200 rounded-lg shadow-lg top-full max-h-56">
+                        {reversalResults.map((r) => (
+                          <button
+                            key={r.id}
+                            onClick={() => pickReversalReceipt(r)}
+                            className="w-full flex items-center justify-between gap-3 px-4 py-2.5 hover:bg-blue-50 text-left border-b border-gray-50 last:border-0 transition"
+                          >
+                            <div className="min-w-0">
+                              <p className="text-sm font-medium text-gray-800 truncate">
+                                {r.clientName}
+                              </p>
+                              <p className="font-mono text-xs text-gray-400">
+                                {r.invoice_number} · {fmtDate(r.payment_date)}
+                              </p>
+                            </div>
+                            <span className="font-mono text-xs font-semibold text-gray-600 shrink-0">
+                              ₱{fmt(r.amount)}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    {showReversalDrop &&
+                      reversalSearch &&
+                      reversalResults.length === 0 &&
+                      !reversalSearchLoading && (
+                        <div className="absolute left-0 right-0 z-30 px-4 py-3 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg top-full">
+                          <p className="text-sm text-gray-400">
+                            No matching invoices found
+                          </p>
+                        </div>
+                      )}
+                  </>
+                ) : (
+                  <div className="flex items-center justify-between px-3 py-2 border border-gray-200 rounded-md bg-gray-50">
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-gray-800 truncate">
+                        {selectedReversalReceipt.clientName}
+                      </p>
+                      <p className="font-mono text-xs text-gray-400">
+                        {selectedReversalReceipt.invoice_number} ·{" "}
+                        {fmtDate(selectedReversalReceipt.payment_date)} · ₱
+                        {fmt(selectedReversalReceipt.amount)}
+                      </p>
+                    </div>
+                    <button
+                      onClick={clearReversalReceipt}
+                      className="text-gray-300 hover:text-gray-500 shrink-0"
+                    >
+                      <FaTimes size={12} />
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {!selectedReversalReceipt && (
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className={labelCls}>Date From</label>
+                    <input
+                      type="date"
+                      value={reversalDateFrom}
+                      onChange={(e) => setReversalDateFrom(e.target.value)}
+                      className={inputCls}
+                    />
+                  </div>
+                  <div>
+                    <label className={labelCls}>Date To</label>
+                    <input
+                      type="date"
+                      value={reversalDateTo}
+                      onChange={(e) => setReversalDateTo(e.target.value)}
+                      className={inputCls}
+                    />
+                  </div>
+                </div>
+              )}
+
+              <div>
+                <label className={labelCls}>Reversal Date</label>
+                <input
+                  type="date"
+                  value={reversalDate}
+                  onChange={(e) => setReversalDate(e.target.value)}
+                  className={inputCls}
+                />
+              </div>
+              {selectedReversalReceipt && (
+                <>
+                  <div>
+                    <label className={labelCls}>
+                      Payment Date (for new entry)
+                    </label>
+                    <input
+                      type="date"
+                      value={paymentDate}
+                      onChange={(e) => setPaymentDate(e.target.value)}
+                      className={inputCls}
+                    />
+                  </div>
+                  <div>
+                    <label className={labelCls}>Reason (optional)</label>
+                    <textarea
+                      value={reversalReason}
+                      onChange={(e) => setReversalReason(e.target.value)}
+                      rows={2}
+                      className={`${inputCls} resize-none`}
+                    />
+                  </div>
+                </>
+              )}
+            </div>
+            <div className="flex justify-end gap-2 mt-5">
+              <button
+                onClick={() => {
+                  setShowReversalModal(false);
+                  clearReversalReceipt();
+                }}
+                className="px-4 py-2 text-sm font-medium text-gray-600 border border-gray-200 rounded-md hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleReversal}
+                disabled={reversing}
+                className="px-4 py-2 text-sm font-medium text-white rounded-md disabled:opacity-50"
+                style={{ background: RED }}
+              >
+                {reversing ? "Processing..." : "Confirm Reversal"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

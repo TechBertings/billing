@@ -811,7 +811,20 @@ export default function CreateBilling({ currentUser }) {
     totalDue,
     notes,
   });
-
+// ── Flatten schedule (retainer fee) rows into billing_items shape ──
+const buildScheduleItemRows = (scheduleAccounts) =>
+  (scheduleAccounts || []).flatMap((acc) =>
+    (acc.details || []).map((d) => ({
+      account_code: acc.account_code || "",
+      agency: acc.agency || "",
+      description: `${acc.description}${acc.rf_code ? ` (${acc.rf_code})` : ""} - Yr ${d.year}`,
+      period_covered: `${fmtFullDate(d.period_start)} – ${fmtFullDate(d.period_end)}`,
+      amount:
+        (parseFloat(d.net_of_vat) || 0) +
+        (parseFloat(d.vat) || 0) -
+        (parseFloat(d.wtax) || 0),
+    })),
+  );
   // ── Core DB upsert ──
   const upsertBilling = async (status, filledItems) => {
     const payload = {
@@ -855,19 +868,22 @@ export default function CreateBilling({ currentUser }) {
       setSavedBillingId(bill.id);
     }
 
-    const { error: itemErr } = await supabase.from("billing_items").insert(
-      filledItems.map((i) => ({
-        billing_id: bill.id,
-        account_code: i.account_code || null,
-        agency: i.agency,
-        description: i.description,
-        period_covered: i.period_covered,
-        amount: parseFloat(i.amount) || 0,
-      })),
-    );
-    if (itemErr) throw itemErr;
-    return bill;
-  };
+const allItemRows = [...filledItems, ...buildScheduleItemRows(scheduleAccounts)];
+
+const { error: itemErr } = await supabase.from("billing_items").insert(
+  allItemRows.map((i) => ({
+    billing_id: bill.id,
+    account_code: i.account_code || null,
+    agency: i.agency,
+    description: i.description,
+    period_covered: i.period_covered,
+    amount: parseFloat(i.amount) || 0,
+  })),
+);
+if (itemErr) throw itemErr;
+return bill;
+};
+
 
   // ── Save as Draft ──
   const handleSaveDraft = async () => {

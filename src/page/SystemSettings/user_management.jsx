@@ -481,7 +481,7 @@ function UserManagement() {
     <div className="px-6 mx-auto max-w-7xl">
       {/* Header */}
       <div className="mb-6">
-        <h2 className="text-3xl font-bold text-blue-600">User Management</h2>
+        <h2 className="text-3xl font-bold text-teal-700">User Management</h2>
       </div>
 
       {/* Search and Filters */}
@@ -494,14 +494,14 @@ function UserManagement() {
               placeholder="Search users..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full py-2.5 pl-10 pr-4 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              className="w-full py-2.5 pl-10 pr-4 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-teal-500"
             />
           </div>
 
           <select
             value={roleFilter}
             onChange={(e) => setRoleFilter(e.target.value)}
-            className="px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            className="px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-teal-500"
           >
             <option value="All Roles">All Roles</option>
             {roles.map((role) => (
@@ -513,7 +513,7 @@ function UserManagement() {
 
           <button
             onClick={() => openModal("add")}
-            className="flex items-center gap-2 px-4 py-2.5 text-white bg-blue-600 rounded-lg hover:bg-blue-700 font-semibold"
+            className="flex items-center gap-2 px-4 py-2.5 text-white bg-teal-700 rounded-lg hover:bg-teal-800 font-semibold"
           >
             <FaUserPlus /> Add User
           </button>
@@ -535,9 +535,9 @@ function UserManagement() {
 
       {/* Stats */}
       <div className="grid grid-cols-3 gap-5 mb-6">
-        <div className="p-4 bg-white border border-blue-200 rounded-lg shadow-sm">
+        <div className="p-4 bg-white border border-teal-200 rounded-lg shadow-sm">
           <p className="text-sm font-semibold text-gray-600">
-            Total: <span className="text-blue-600">{users.length}</span>
+            Total: <span className="text-teal-700">{users.length}</span>
           </p>
         </div>
         <div className="p-4 bg-white border border-green-200 rounded-lg shadow-sm">
@@ -561,7 +561,7 @@ function UserManagement() {
       {/* Users Grid */}
       {isLoading ? (
         <div className="flex items-center justify-center py-20">
-          <FaSync className="mr-3 text-3xl text-blue-600 animate-spin" />
+          <FaSync className="mr-3 text-3xl text-teal-700 animate-spin" />
           <span className="text-lg text-gray-600">Loading...</span>
         </div>
       ) : filteredUsers.length === 0 ? (
@@ -584,7 +584,7 @@ function UserManagement() {
                       className="object-cover w-24 h-24 border-4 border-gray-100 rounded-full"
                     />
                   ) : (
-                    <div className="flex items-center justify-center w-24 h-24 text-2xl font-bold text-white bg-blue-500 border-4 border-gray-100 rounded-full">
+                    <div className="flex items-center justify-center w-24 h-24 text-2xl font-bold text-white bg-teal-600 border-4 border-gray-100 rounded-full">
                       {user.full_name
                         .split(" ")
                         .map((n) => n[0])
@@ -622,7 +622,7 @@ function UserManagement() {
                 <div className="flex gap-2">
                   <button
                     onClick={() => openModal("edit", user)}
-                    className="flex items-center justify-center flex-1 gap-2 px-4 py-2 text-sm font-semibold text-white bg-blue-600 rounded-lg hover:bg-blue-700"
+                    className="flex items-center justify-center flex-1 gap-2 px-4 py-2 text-sm font-semibold text-white bg-teal-700 rounded-lg hover:bg-teal-800"
                   >
                     <FaEdit /> Edit
                   </button>
@@ -756,7 +756,7 @@ function UserManagement() {
                               [e.target.name]: e.target.value,
                             }))
                           }
-                          className={`w-full py-2.5 ${field.icon ? "pl-10" : "pl-4"} pr-4 border rounded-lg focus:ring-2 focus:ring-blue-500`}
+                          className={`w-full py-2.5 ${field.icon ? "pl-10" : "pl-4"} pr-4 border rounded-lg focus:ring-2 focus:ring-teal-500`}
                           required={field.required}
                           disabled={field.disabled}
                         />
@@ -787,7 +787,7 @@ function UserManagement() {
                           role: e.target.value,
                         }))
                       }
-                      className="w-full py-2.5 px-4 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                      className="w-full py-2.5 px-4 border rounded-lg focus:ring-2 focus:ring-teal-500"
                       required
                     >
                       {roles.map((role) => (
@@ -811,7 +811,7 @@ function UserManagement() {
                           status: e.target.value,
                         }))
                       }
-                      className="w-full py-2.5 px-4 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                      className="w-full py-2.5 px-4 border rounded-lg focus:ring-2 focus:ring-teal-500"
                       required
                     >
                       {["Active", "Inactive"].map((status) => (
@@ -840,7 +840,7 @@ function UserManagement() {
                         securityAnswer: selected?.answer || "",
                       }));
                     }}
-                    className="w-full py-2.5 px-4 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                    className="w-full py-2.5 px-4 border rounded-lg focus:ring-2 focus:ring-teal-500"
                     required
                   >
                     <option value="">Select a security question</option>
@@ -879,7 +879,7 @@ function UserManagement() {
                   <button
                     type="submit"
                     disabled={isLoading}
-                    className="flex-1 px-6 py-2.5 text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50"
+                    className="flex-1 px-6 py-2.5 text-white bg-teal-700 rounded-lg hover:bg-teal-800 disabled:opacity-50"
                   >
                     {isLoading
                       ? "Saving..."
@@ -920,7 +920,7 @@ function UserManagement() {
                       className="object-cover w-16 h-16 rounded-full"
                     />
                   ) : (
-                    <div className="flex items-center justify-center w-16 h-16 text-xl font-bold text-white bg-blue-500 rounded-full">
+                    <div className="flex items-center justify-center w-16 h-16 text-xl font-bold text-white bg-teal-600 rounded-full">
                       {selectedUserForActions.full_name
                         .split(" ")
                         .map((n) => n[0])
@@ -971,7 +971,7 @@ function UserManagement() {
                       key={option.value}
                       className={`flex items-center p-3 border rounded-lg cursor-pointer hover:bg-gray-50 ${
                         deactivateDuration === option.value
-                          ? "border-blue-500 bg-blue-50"
+                          ? "border-teal-500 bg-teal-50"
                           : "border-gray-200"
                       } ${option.highlight ? "border-green-500 bg-green-50" : ""}`}
                     >
@@ -981,7 +981,7 @@ function UserManagement() {
                         value={option.value}
                         checked={deactivateDuration === option.value}
                         onChange={(e) => setDeactivateDuration(e.target.value)}
-                        className="w-4 h-4 text-blue-600"
+                        className="w-4 h-4 text-teal-600"
                       />
                       <span className="flex items-center gap-2 ml-3 text-sm font-medium text-gray-700">
                         {option.icon}

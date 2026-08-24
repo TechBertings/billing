@@ -1,4 +1,4 @@
-    import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
     import { FaCheck, FaTimes, FaEye, FaClock, FaSearch } from 'react-icons/fa';
     import { supabase } from '../../lib/supabaseClient';
     import { useApprovalPermission } from '../../hooks/approval_permission';
@@ -135,18 +135,18 @@
                 value={search}
                 onChange={e => setSearch(e.target.value)}
                 placeholder="Search ID, business, contact…"
-                className="w-full py-2 pr-3 text-sm border rounded-lg pl-9 border-slate-200 focus:border-blue-500 focus:outline-none"
+                className="w-full py-2 pr-3 text-sm border rounded-lg pl-9 border-slate-200 focus:border-teal-500 focus:outline-none"
                 />
             </div>
             <select value={accountFilter} onChange={e => setAccountFilter(e.target.value)}
-                className="px-3 py-2 text-sm bg-white border rounded-lg cursor-pointer border-slate-200 focus:border-blue-500 focus:outline-none">
+                className="px-3 py-2 text-sm bg-white border rounded-lg cursor-pointer border-slate-200 focus:border-teal-500 focus:outline-none">
                 <option value="">All Accounts</option>
                 {accounts.map(a => <option key={a} value={a}>{a}</option>)}
             </select>
             <select
   value={approvalStatusFilter}
   onChange={e => setApprovalStatusFilter(e.target.value)}
-  className="px-3 py-2 text-sm bg-white border rounded-lg cursor-pointer border-slate-200 focus:border-blue-500 focus:outline-none"
+  className="px-3 py-2 text-sm bg-white border rounded-lg cursor-pointer border-slate-200 focus:border-teal-500 focus:outline-none"
 >
   <option value="">All Status</option>
   <option value="pending">Pending</option>
@@ -156,10 +156,10 @@
             <div className="flex items-center gap-2 text-xs text-slate-500">
                 <span>From</span>
                 <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}
-                className="px-3 py-2 text-sm border rounded-lg border-slate-200 focus:border-blue-500 focus:outline-none" />
+                className="px-3 py-2 text-sm border rounded-lg border-slate-200 focus:border-teal-500 focus:outline-none" />
                 <span>to</span>
                 <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)}
-                className="px-3 py-2 text-sm border rounded-lg border-slate-200 focus:border-blue-500 focus:outline-none" />
+                className="px-3 py-2 text-sm border rounded-lg border-slate-200 focus:border-teal-500 focus:outline-none" />
             </div>
             <button
                 onClick={() => { const t = new Date().toISOString().split('T')[0]; setDateFrom(t); setDateTo(t); }}
@@ -179,7 +179,7 @@
             <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                 <thead>
-                    <tr className="text-left text-white bg-blue-600">
+                    <tr className="text-left text-white bg-teal-700">
                     {['Client ID','Business Name','Account','Created At', 'Coverage Date','Contact Person','Status','Approved Date','Action'].map(h => (
                         <th key={h} className="px-4 py-3.5 font-semibold text-xs uppercase tracking-wide whitespace-nowrap">{h}</th>
                     ))}
@@ -193,7 +193,7 @@
                     ) : paginated.map(client => (
                     <tr key={client.id} className="transition hover:bg-slate-50">
                         <td className="px-4 py-3.5">
-                        <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold bg-blue-600 text-white whitespace-nowrap">
+                        <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold bg-teal-700 text-white whitespace-nowrap">
                             {client.client_id}
                         </span>
                         </td>
@@ -207,7 +207,7 @@
                         <td className="px-4 py-3.5 text-center">
                         <button
                             onClick={() => { setModal(client); setNotes(''); setMessage({ text: '', type: '' }); }}
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition whitespace-nowrap"
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-teal-700 hover:bg-teal-800 rounded-lg transition whitespace-nowrap"
                         >
                             <FaEye size={10} /> View Details
                         </button>
@@ -227,7 +227,7 @@
             </button>
             <span className="text-xs text-slate-500">Page {page} of {totalPages}</span>
             <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}
-                className="px-4 py-2 font-medium text-white transition bg-blue-600 border border-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-40">
+                className="px-4 py-2 font-medium text-white transition bg-teal-700 border border-teal-700 rounded-lg hover:bg-teal-800 disabled:opacity-40">
                 Next
             </button>
             </div>
@@ -239,11 +239,11 @@
             <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
 
                 {/* Modal Header */}
-                <div className="flex items-start justify-between px-6 py-4 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-t-2xl">
+                <div className="flex items-start justify-between px-6 py-4 bg-gradient-to-r from-teal-800 to-emerald-700 rounded-t-2xl">
                 <div>
-                    <p className="text-xs font-bold tracking-widest text-blue-100 uppercase">Client Profile</p>
+                    <p className="text-xs font-bold tracking-widest text-teal-100 uppercase">Client Profile</p>
                     <h2 className="text-white font-bold text-lg leading-tight mt-0.5">{modal.business_name || 'N/A'}</h2>
-                    <p className="text-blue-200 text-xs mt-0.5">{modal.client_id}</p>
+                    <p className="text-teal-200 text-xs mt-0.5">{modal.client_id}</p>
                 </div>
                 <div className="flex items-center gap-2 mt-1">
                     <span className={`text-xs font-semibold px-2.5 py-1 rounded-full capitalize border ${BADGE[modal.approval_status?.toLowerCase()] || BADGE.pending}`}>
@@ -331,7 +331,7 @@
                         onChange={e => setNotes(e.target.value)}
                         placeholder="Add notes here…"
                         rows={2}
-                        className="w-full px-3 py-2.5 text-sm border-2 border-slate-200 rounded-xl focus:border-blue-500 focus:outline-none resize-none mb-4"
+                        className="w-full px-3 py-2.5 text-sm border-2 border-slate-200 rounded-xl focus:border-teal-500 focus:outline-none resize-none mb-4"
                     />
                     <div className="flex gap-3">
                         <button

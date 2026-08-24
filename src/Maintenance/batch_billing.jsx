@@ -12,6 +12,7 @@ import {
 } from "react-icons/fa";
 import { useContributionConfig } from "../utils/use_contributions";
 import { computeSSS, computePHIC, computeHDMF } from "../utils/govt_contributions";
+import { useSSSBrackets } from "../utils/use_sss_brackets";
 
 const inputCls =
   "w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:border-gray-400 focus:ring-1 focus:ring-gray-200 transition bg-white";
@@ -67,7 +68,7 @@ export default function BatchBilling() {
   const [taxRowSaving, setTaxRowSaving] = useState({});
   const [taxModalOpen, setTaxModalOpen] = useState(false);
 const [taxModalTarget, setTaxModalTarget] = useState(null); // { coa, t }
-
+const { brackets: sssBrackets } = useSSSBrackets();
   const flash = (msg, type = "success") => {
     setMessage(msg);
     setMessageType(type);
@@ -225,28 +226,29 @@ const fetchClientEmployees = useCallback(async () => {
   if (!activeClient?.client_id) { setEmployees([]); return; }
   const { data, error } = await supabase
     .from("employee_profile")
-    .select("salary_bracket, sss_loan, pagibig_loan")
+    .select("sss_ee, sss_er, phic_ee, phic_er, hdmf_ee, hdmf_er, sss_loan, pagibig_loan, salary_bracket") 
+
     .eq("client_id", activeClient.client_id);
   if (!error) setEmployees(data || []);
 }, [activeClient?.client_id]);
 
+
 useEffect(() => { fetchClientEmployees(); }, [fetchClientEmployees]);
 
+
+// 3. I-add ang EC sa contributionTotals
 const contributionTotals = useMemo(() => {
   const acc = { sss_total: 0, phic_total: 0, hdmf_total: 0, sss_loan: 0, pagibig_loan: 0 };
   employees.forEach((e) => {
-    const s = computeSSS(e.salary_bracket, contribCfg);
-    const p = computePHIC(e.salary_bracket, contribCfg);
-    const h = computeHDMF(e.salary_bracket, contribCfg);
-    acc.sss_total += s.total;
-    acc.phic_total += p.total;
-    acc.hdmf_total += h.total;
+    const ec = computeSSS(e.salary_bracket, sssBrackets).ec;
+    acc.sss_total += (Number(e.sss_ee) || 0) + (Number(e.sss_er) || 0) + ec; // ← + ec
+    acc.phic_total += (Number(e.phic_ee) || 0) + (Number(e.phic_er) || 0);
+    acc.hdmf_total += (Number(e.hdmf_ee) || 0) + (Number(e.hdmf_er) || 0);
     acc.sss_loan += Number(e.sss_loan) || 0;
     acc.pagibig_loan += Number(e.pagibig_loan) || 0;
   });
   return acc;
-}, [employees, contribCfg]);
-
+}, [employees, sssBrackets]); // ← dagdag dependency
 
 
 const handleSaveTax = async (t) => {

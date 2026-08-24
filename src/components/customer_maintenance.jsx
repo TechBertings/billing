@@ -1,4 +1,5 @@
-import { Plus, Pencil, Trash2, Search, X} from "lucide-react";
+import { useState, useEffect } from "react";
+import { Plus, Pencil, Trash2, Search, X, ChevronLeft, ChevronRight } from "lucide-react";
 
 // ─── Add/Edit Modal ───────────────────────────────────────────────────
 export const MaintenanceModal = ({
@@ -26,41 +27,43 @@ export const MaintenanceModal = ({
 
         {/* Scrollable body */}
         <div className="flex-1 px-6 py-5 space-y-4 overflow-y-auto">
- {fields.map((field, i) => (
-  <div key={i}>
-    <label className="block mb-1 text-xs font-semibold tracking-wider uppercase text-slate-500">
-      {field.label}
-    </label>
-    {field.readOnly ? (
-      <>
-        <div className="flex items-center w-full px-1 py-2.5 border border-slate-200 rounded-xl bg-slate-50 text-sm tracking-widest select-none">
-          <span className="w-2 h-2 mr-2 rounded-full shrink-0" />
-          {field.value}
-        </div>
-        <p className="mt-1 text-xs text-slate-400">
-          Auto-generated · read only
-        </p>
-      </>
-    ) : field.type === "select" ? (
-      <select
-        value={field.value}
-        onChange={(e) => field.onChange(e.target.value)}
-        className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-green-300 focus:border-green-400 transition bg-white"
-      >
-        {field.options.map((opt) => (
-          <option key={opt.value} value={opt.value}>{opt.label}</option>
-        ))}
-      </select>
-    ) : (
-      <input
-        value={field.value}
-        onChange={(e) => field.onChange(e.target.value)}
-        placeholder={field.placeholder || ""}
-        className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-green-300 focus:border-green-400 transition"
-      />
-    )}
-  </div>
-))}
+          {fields.map((field, i) => (
+            <div key={i}>
+              <label className="block mb-1 text-xs font-semibold tracking-wider uppercase text-slate-500">
+                {field.label}
+              </label>
+              {field.readOnly ? (
+                <>
+                  <div className="flex items-center w-full px-1 py-2.5 border border-slate-200 rounded-xl bg-slate-50 text-sm tracking-widest select-none">
+                    <span className="w-2 h-2 mr-2 rounded-full shrink-0" />
+                    {field.value}
+                  </div>
+                  <p className="mt-1 text-xs text-slate-400">
+                    Auto-generated · read only
+                  </p>
+                </>
+              ) : field.type === "select" ? (
+                <select
+                  value={field.value}
+                  onChange={(e) => field.onChange(e.target.value)}
+                  className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-green-300 focus:border-green-400 transition bg-white"
+                >
+                  {field.options.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <input
+                  value={field.value}
+                  onChange={(e) => field.onChange(e.target.value)}
+                  placeholder={field.placeholder || ""}
+                  className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-green-300 focus:border-green-400 transition"
+                />
+              )}
+            </div>
+          ))}
         </div>
 
         {/* Sticky footer */}
@@ -168,7 +171,32 @@ const CustomerMaintenanceTable = ({
   fetching,
   addLabel = "Add",
   emptyMessage = "No records found.",
+  pageSize = 10,
 }) => {
+  const [currentPage, setCurrentPage] = useState(1);
+
+  // Reset to page 1 whenever the search term changes, so you don't get
+  // stuck on a page that no longer has any matching rows.
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [search]);
+
+  const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
+
+  // Clamp in case rows shrink (e.g. after a delete) and current page no
+  // longer exists.
+  useEffect(() => {
+    if (currentPage > totalPages) setCurrentPage(totalPages);
+  }, [totalPages, currentPage]);
+
+  const paginatedRows = rows.slice(
+    (currentPage - 1) * pageSize,
+    currentPage * pageSize,
+  );
+
+  const rangeStart = rows.length === 0 ? 0 : (currentPage - 1) * pageSize + 1;
+  const rangeEnd = Math.min(currentPage * pageSize, rows.length);
+
   return (
     <div className="min-h-screen px-6 py-8 ">
       <div className="max-w-4xl mx-auto">
@@ -225,9 +253,9 @@ const CustomerMaintenanceTable = ({
                 {col.label}
               </span>
             ))}
-                <span className="flex justify-center text-xs font-bold tracking-wider text-right uppercase text-slate-500">
-                 Actions
-                </span>
+            <span className="flex justify-center text-xs font-bold tracking-wider text-right uppercase text-slate-500">
+              Actions
+            </span>
           </div>
 
           {/* Body */}
@@ -240,7 +268,7 @@ const CustomerMaintenanceTable = ({
               {emptyMessage}
             </div>
           ) : (
-            rows.map((row, i) => (
+            paginatedRows.map((row, i) => (
               <div
                 key={row.id}
                 style={{
@@ -248,24 +276,24 @@ const CustomerMaintenanceTable = ({
                   gridTemplateColumns: `repeat(${columns.length}, minmax(0, 1fr)) 160px`,
                 }}
                 className={`items-center px-6 py-4 transition hover:bg-green-50/50 ${
-                  i !== rows.length - 1 ? "border-b border-slate-100" : ""
+                  i !== paginatedRows.length - 1 ? "border-b border-slate-100" : ""
                 }`}
               >
-              {columns.map((col) => (
-  <div key={col.key}>
-    {col.render ? (
-      col.render(row)
-    ) : col.badge ? (
-      <span className="inline-flex items-center px-2.5 py-1 rounded-lg  text-xs font-bold tracking-wider">
-        {row[col.key] || "—"}
-      </span>
-    ) : (
-      <span className="text-sm font-semibold text-slate-700">
-        {row[col.key] || "—"}
-      </span>
-    )}
-  </div>
-))}
+                {columns.map((col) => (
+                  <div key={col.key}>
+                    {col.render ? (
+                      col.render(row)
+                    ) : col.badge ? (
+                      <span className="inline-flex items-center px-2.5 py-1 rounded-lg  text-xs font-bold tracking-wider">
+                        {row[col.key] || "—"}
+                      </span>
+                    ) : (
+                      <span className="text-sm font-semibold text-slate-700">
+                        {row[col.key] || "—"}
+                      </span>
+                    )}
+                  </div>
+                ))}
 
                 {/* Actions */}
                 <div className="flex items-center justify-end gap-2 w-[160px]">
@@ -284,6 +312,34 @@ const CustomerMaintenanceTable = ({
                 </div>
               </div>
             ))
+          )}
+
+          {/* Pagination bar */}
+          {!fetching && rows.length > 0 && (
+            <div className="flex items-center justify-between px-6 py-3 border-t border-slate-100 bg-slate-50">
+              <span className="text-xs font-semibold text-slate-500">
+                Showing {rangeStart}–{rangeEnd} of {rows.length}
+              </span>
+              <div className="flex items-center gap-1.5">
+                <button
+                  onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                  disabled={currentPage === 1}
+                  className="flex items-center gap-1 px-3 py-1.5 text-xs font-bold rounded-lg border border-slate-200 text-slate-600 hover:bg-white disabled:opacity-40 disabled:cursor-not-allowed transition"
+                >
+                  <ChevronLeft size={12} /> Prev
+                </button>
+                <span className="px-2 text-xs font-bold text-slate-600">
+                  Page {currentPage} of {totalPages}
+                </span>
+                <button
+                  onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                  disabled={currentPage === totalPages}
+                  className="flex items-center gap-1 px-3 py-1.5 text-xs font-bold rounded-lg border border-slate-200 text-slate-600 hover:bg-white disabled:opacity-40 disabled:cursor-not-allowed transition"
+                >
+                  Next <ChevronRight size={12} />
+                </button>
+              </div>
+            </div>
           )}
         </div>
 

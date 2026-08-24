@@ -23,6 +23,8 @@ import ARAgingReport from './page/Reports/aging_reports';
 import FinancialReports from './page/Reports/financial_reports';
 import TransmittalReport from './page/Reports/document_management_transmittal_report';
 import ReceivablesList from './page/AccountingManagement/receivable_list';
+import UndepositedFunds from './page/AccountingManagement/undeposited_funds';
+import AuditTrail from './page/Reports/audit_trail';
 
 
 // ── Roles allowed to approve & send SOAs ──
@@ -139,6 +141,8 @@ const [preselectedBillingId, setPreselectedBillingId] = useState(null);
       case 'FinancialReports':   return <FinancialReports />;
 case 'TransmittalReport':
   return <TransmittalReport currentUser={currentUser} />;
+  case 'AuditTrail':
+  return <AuditTrail />;
       case 'ReceivablesList':
         return <ReceivablesList
           onSelectInvoice={(client, clientId, billingId) => {
@@ -167,6 +171,7 @@ case 'TransmittalReport':
       case 'JobOrder':           return <JobOrder />;
       case 'BankReconciliation': return <BankReconciliation />;
       case 'ChartOfAccounts':    return <ChartOfAccounts />;
+            case 'UndepositedFunds':   return <UndepositedFunds currentUser={currentUser} />;
 
       default:
         return (

@@ -32,11 +32,11 @@ const MONTHS = [
 ];
 
 const PAYMENT_METHOD_LABELS = {
-  bank_transfer_bdo: "BDO Bank Transfer",
-  bank_transfer_chinabank: "China Bank Transfer",
   cash: "Cash",
   cheque: "Cheque",
+  bank_transfer: "Bank Transfer",
   credit: "Applied Credit",
+  other: "Other",
 };
 
 const BUCKETS = [
@@ -72,7 +72,14 @@ function bucketFor(days) {
   if (days <= 90) return "b61_90";
   return "b90_plus";
 }
-function paymentMethodLabel(method) {
+function paymentMethodLabel(row) {
+  const method = typeof row === "string" ? row : row?.payment_method;
+  const receivingBank = typeof row === "object" ? row?.receiving_bank : null;
+
+  if (method === "bank_transfer" && receivingBank) {
+    if (receivingBank === "bdo") return "BDO Bank Transfer";
+    if (receivingBank === "chinabank") return "China Bank Transfer";
+  }
   return PAYMENT_METHOD_LABELS[method] || method || "Unspecified";
 }
 function clientDisplayName(c) {
@@ -188,9 +195,9 @@ function CollectionsReport({ month, year }) {
       const startDate = `${year}-${String(month).padStart(2, "0")}-01`;
       const endDate = lastDayOfMonth(year, month);
 
-      const { data: rowsData, error } = await supabase
+        const { data: rowsData, error } = await supabase
         .from("official_receipts")
-        .select("or_number, payment_date, amount, notes, client_id, payment_method")
+        .select("invoice_number, payment_date, amount, notes, client_id, payment_method, receiving_bank")
         .gte("payment_date", startDate)
         .lte("payment_date", endDate)
         .order("payment_date", { ascending: false });
@@ -221,7 +228,7 @@ function CollectionsReport({ month, year }) {
   const grouped = useMemo(() => {
     const map = {};
     receipts.forEach((r) => {
-      const label = groupBy === "client" ? r.clientName : paymentMethodLabel(r.payment_method);
+      const label = groupBy === "client" ? r.clientName : paymentMethodLabel(r);
       if (!map[label]) map[label] = { label, count: 0, amount: 0 };
       map[label].count += 1;
       map[label].amount += Number(r.amount || 0);
@@ -268,7 +275,7 @@ function CollectionsReport({ month, year }) {
         />
       </div>
 
-      <div className="print:block hidden mb-2">
+      <div className="hidden mb-2 print:block">
         <h2 className="text-base font-bold text-gray-800">Collections Report</h2>
         <p className="text-xs text-gray-500">{subtitle}</p>
       </div>
@@ -331,12 +338,12 @@ function CollectionsReport({ month, year }) {
                   </tr>
                 </thead>
                 <tbody>
-                  {receipts.map((r) => (
-                    <tr key={r.or_number} className="border-t border-gray-50">
+                    {receipts.map((r) => (
+                    <tr key={r.invoice_number} className="border-t border-gray-50">
                       <td className="px-3 py-2 text-gray-600">{r.payment_date}</td>
-                      <td className="px-3 py-2 font-mono text-gray-500">{r.or_number}</td>
+                      <td className="px-3 py-2 font-mono text-gray-500">{r.invoice_number}</td>
                       <td className="px-3 py-2 text-gray-800">{r.clientName}</td>
-                      <td className="px-3 py-2 text-gray-600">{paymentMethodLabel(r.payment_method)}</td>
+                      <td className="px-3 py-2 text-gray-600">{paymentMethodLabel(r)}</td>
                       <td className="px-3 py-2 font-mono text-right text-gray-700">{fmt(r.amount)}</td>
                     </tr>
                   ))}
@@ -406,7 +413,7 @@ function BankReconciliationSummary({ month, year }) {
         />
       </div>
 
-      <div className="print:block hidden mb-2">
+      <div className="hidden mb-2 print:block">
         <h2 className="text-base font-bold text-gray-800">Bank Reconciliation Summary</h2>
         <p className="text-xs text-gray-500">{subtitle}</p>
       </div>
@@ -559,7 +566,7 @@ function RevenueSummary({ year }) {
         />
       </div>
 
-      <div className="print:block hidden mb-2">
+      <div className="hidden mb-2 print:block">
         <h2 className="text-base font-bold text-gray-800">Revenue Summary</h2>
         <p className="text-xs text-gray-500">{subtitle}</p>
       </div>
@@ -621,13 +628,13 @@ function RevenueSummary({ year }) {
 function AgingSummary() {
   const [loading, setLoading] = useState(false);
   const [clientRows, setClientRows] = useState([]);
-
+  const [selectedClient, setSelectedClient] = useState(null); // client row for the detail modal
   const load = useCallback(async () => {
     setLoading(true);
     try {
       const { data: statements, error: stErr } = await supabase
         .from("billing_statements")
-        .select("id, client_id, soa_date, due_date, status")
+        .select("id, soa_number, client_id, soa_date, due_date, status")
         .in("status", ["approved", "unpaid"]);
       if (stErr) throw stErr;
 
@@ -686,24 +693,42 @@ function AgingSummary() {
           }
         });
 
-        const bucketTotals = { current: 0, b1_30: 0, b31_60: 0, b61_90: 0, b90_plus: 0 };
+               const bucketTotals = { current: 0, b1_30: 0, b31_60: 0, b61_90: 0, b90_plus: 0 };
         let totalBalance = 0;
         let oldestDueDate = null;
+        const invoiceDetails = []; // per-invoice breakdown, shown in the detail modal
 
         sortedInvoices.forEach((inv) => {
-          let remaining = inv.charge - (applied[inv.id] || 0);
+          const originalCharge = inv.charge;
+          const appliedDirect = applied[inv.id] || 0;
+          let remaining = originalCharge - appliedDirect;
+          let poolTaken = 0;
           if (remaining > 0 && pool > 0) {
             const take = Math.min(pool, remaining);
             remaining -= take;
             pool -= take;
+            poolTaken = take;
           }
           if (remaining <= 0.005) return;
 
+          const days = daysOverdue(inv.due_date);
           totalBalance += remaining;
-          bucketTotals[bucketFor(daysOverdue(inv.due_date))] += remaining;
+          bucketTotals[bucketFor(days)] += remaining;
           if (!oldestDueDate || new Date(inv.due_date) < new Date(oldestDueDate)) {
             oldestDueDate = inv.due_date;
           }
+
+          invoiceDetails.push({
+            id: inv.id,
+            soa_number: inv.soa_number,
+            soa_date: inv.soa_date,
+            due_date: inv.due_date,
+            charge: originalCharge,
+            paid: appliedDirect + poolTaken,
+            balance: remaining,
+            days_overdue: days,
+            bucket: bucketFor(days),
+          });
         });
 
         return {
@@ -711,6 +736,7 @@ function AgingSummary() {
           clientName: clientDisplayName(clientMap[clientId]),
           total_balance: totalBalance,
           oldest_due_date: oldestDueDate,
+          invoices: invoiceDetails,
           ...bucketTotals,
         };
       });
@@ -763,7 +789,7 @@ function AgingSummary() {
         />
       </div>
 
-      <div className="print:block hidden mb-2">
+      <div className="hidden mb-2 print:block">
         <h2 className="text-base font-bold text-gray-800">AR Aging Summary</h2>
         <p className="text-xs text-gray-500">{subtitle}</p>
       </div>
@@ -796,8 +822,12 @@ function AgingSummary() {
               {clientRows.length === 0 ? (
                 <tr><td colSpan={7} className="py-6 text-center text-gray-400">No outstanding balances.</td></tr>
               ) : (
-                (clientRows.length > 20 ? top10 : clientRows).map((r) => (
-                  <tr key={r.client_id} className="border-t border-gray-50">
+                       (clientRows.length > 20 ? top10 : clientRows).map((r) => (
+                  <tr
+                    key={r.client_id}
+                    onClick={() => setSelectedClient(r)}
+                    className="transition border-t cursor-pointer border-gray-50 hover:bg-gray-50/60"
+                  >
                     <td className="px-3 py-2 text-gray-800">{r.clientName}</td>
                     <td className="px-3 py-2 text-gray-600">{fmtDate(r.oldest_due_date)}</td>
                     {BUCKETS.map((b) => (
@@ -827,6 +857,107 @@ function AgingSummary() {
               Showing top 10 of {clientRows.length} clients by balance — full list included in CSV/PDF export.
             </p>
           )}
+        </div>
+      )}
+
+      {/* Detail modal — invoices behind a client's outstanding balance */}
+      {selectedClient && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
+          <div className="w-full max-w-2xl max-h-[85vh] flex flex-col bg-white shadow-2xl rounded-xl overflow-hidden">
+            <div className="flex items-start justify-between flex-shrink-0 px-5 py-4 border-b border-gray-100">
+              <div>
+                <p className="text-sm font-semibold text-gray-800">{selectedClient.clientName}</p>
+                <p className="text-[11px] text-gray-400 font-mono">{selectedClient.client_id}</p>
+              </div>
+              <button
+                onClick={() => setSelectedClient(null)}
+                className="p-1.5 text-gray-300 rounded-md hover:text-gray-500 hover:bg-gray-50"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="grid flex-shrink-0 grid-cols-2 gap-3 px-5 py-3 border-b border-gray-100 bg-gray-50 sm:grid-cols-5">
+              {BUCKETS.map((b) => (
+                <div key={b.key}>
+                  <p className="text-[10px] font-medium tracking-wide text-gray-400 uppercase">{b.label}</p>
+                  <p className="font-mono text-xs font-semibold" style={{ color: selectedClient[b.key] > 0.005 ? b.color : "#9ca3af" }}>
+                    ₱{fmt(selectedClient[b.key])}
+                  </p>
+                </div>
+              ))}
+            </div>
+
+            <div className="flex-1 min-h-0 overflow-y-auto">
+              <table className="w-full text-xs">
+                <thead className="sticky top-0 text-gray-500 bg-white border-b border-gray-100">
+                  <tr>
+                    <th className="px-5 py-2 font-medium text-left">SOA #</th>
+                    <th className="px-3 py-2 font-medium text-left">Due Date</th>
+                    <th className="px-3 py-2 font-medium text-right">Charge</th>
+                    <th className="px-3 py-2 font-medium text-right">Paid</th>
+                    <th className="px-3 py-2 font-medium text-right">Balance</th>
+                    <th className="px-5 py-2 font-medium text-center">Bucket</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {selectedClient.invoices.map((inv) => {
+                    const bucketMeta = BUCKETS.find((b) => b.key === inv.bucket);
+                    return (
+                      <tr key={inv.id} className="border-b border-gray-50">
+                        <td className="px-5 py-2.5 font-mono text-gray-700 whitespace-nowrap">{inv.soa_number}</td>
+                        <td className="px-3 py-2.5 text-gray-600 whitespace-nowrap">
+                          {fmtDate(inv.due_date)}
+                          {inv.days_overdue > 0 && (
+                            <span className="ml-1 text-[10px] text-gray-400">({inv.days_overdue}d)</span>
+                          )}
+                        </td>
+                        <td className="px-3 py-2.5 font-mono text-right text-gray-700">₱{fmt(inv.charge)}</td>
+                        <td className="px-3 py-2.5 font-mono text-right text-gray-500">
+                          {inv.paid > 0.005 ? `₱${fmt(inv.paid)}` : <span className="text-gray-300">—</span>}
+                        </td>
+                        <td className="px-3 py-2.5 font-mono font-semibold text-right text-gray-800">₱{fmt(inv.balance)}</td>
+                        <td className="px-5 py-2.5 text-center">
+                          <span
+                            className="inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold"
+                            style={{ background: `${bucketMeta.color}1a`, color: bucketMeta.color }}
+                          >
+                            {bucketMeta.label}
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+                <tfoot>
+                  <tr className="border-t border-gray-200 bg-gray-50">
+                    <td colSpan={2} className="px-5 py-2.5 font-medium text-right text-gray-600">
+                      Total ({selectedClient.invoices.length} invoice{selectedClient.invoices.length !== 1 ? "s" : ""})
+                    </td>
+                    <td className="px-3 py-2.5 font-mono font-bold text-right text-gray-700">
+                      ₱{fmt(selectedClient.invoices.reduce((s, i) => s + i.charge, 0))}
+                    </td>
+                    <td className="px-3 py-2.5 font-mono font-bold text-right text-gray-700">
+                      ₱{fmt(selectedClient.invoices.reduce((s, i) => s + i.paid, 0))}
+                    </td>
+                    <td className="px-3 py-2.5 font-mono font-bold text-right" style={{ color: RED }}>
+                      ₱{fmt(selectedClient.total_balance)}
+                    </td>
+                    <td />
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+
+            <div className="flex justify-end flex-shrink-0 px-5 py-3 border-t border-gray-100 bg-gray-50">
+              <button
+                onClick={() => setSelectedClient(null)}
+                className="px-3 py-2 text-xs font-medium text-gray-600 border border-gray-200 rounded-md hover:bg-white"
+              >
+                Close
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

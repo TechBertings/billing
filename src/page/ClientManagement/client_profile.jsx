@@ -7,93 +7,7 @@ import Step3TaxRegistration  from "../../client_steps/step_3_tax_registration";
 import Step4AddressLocation  from "../../client_steps/step_4_address_location";
 import Step5OwnerDetails     from "../../client_steps/step_5_owner_details";
 import Step6ContactInfo      from "../../client_steps/step_6_contact_info";
-import Step7Fees                    from "../../client_steps/step_7_fees";
-import Step8GovernmentRemittances   from "../../client_steps/step_8_government_remittances";
 
-// ─── FEE / REMITTANCE FIELD KEYS ──────────────────────────────────────────────
-// Kept here as flat lists so initialForm and the Supabase insert payload can't
-// silently drift out of sync with the Step7/Step8 components.
-const FEE_FIELD_KEYS = [
-  "fee_sec_registration",
-  "fee_sec_gis_renewal",
-  "fee_sec_business_closure",
-  "fee_dti_registration",
-  "fee_dti_renewal",
-  "fee_dti_business_closure",
-  "fee_municipality_registration",
-  "fee_municipality_permit_renewal",
-  "fee_municipality_business_closure",
-  "fee_fire_certificate",
-  "fee_sanitary_permit",
-  "fee_barangay_permit",
-  "fee_bir_registration",
-  "fee_bir_fs_prep_filing",
-  "fee_bir_audit_certificate",
-  "fee_bir_loa_vat_audit",
-  "fee_bir_loa",
-  "fee_bir_open_case",
-  "fee_bir_books_renewal",
-  "fee_bir_cor_updating",
-  "fee_bir_business_closure",
-  "fee_bir_atp",
-  "fee_bir_invoice_booklets",
-  "fee_bir_quarterly_esubmission",
-  "fee_bir_annual_esubmission",
-  "fee_bir_annual_form_2316",
-  "fee_bir_form_2316_by_request",
-  "fee_bir_lessee_info_sheet",
-  "fee_bookkeeping",
-  "fee_inventory_list",
-  "fee_sss_registration",
-  "fee_philhealth_registration",
-  "fee_pagibig_registration",
-  "fee_sss_maternity_submission",
-  "fee_sss_record_updating",
-  "fee_philhealth_record_updating",
-  "fee_pagibig_record_updating",
-  "fee_sss_closure",
-  "fee_philhealth_closure",
-  "fee_pagibig_closure",
-  "fee_tin_card_existing",
-  "fee_tin_card_new",
-  "fee_admin_miscellaneous",
-  "fee_sap_support_monitoring",
-  "fee_municipal_updates",
-  "fee_retainer_tax_filing",
-  "fee_retainer_govt_contributions",
-];
-
-const REMITTANCE_FIELD_KEYS = [
-  "remit_sec_registration",
-  "remit_dti_barangay",
-  "remit_dti_municipality",
-  "remit_dti_regional",
-  "remit_dti_national",
-  "remit_bir_income_tax",
-  "remit_bir_vat",
-  "remit_bir_percentage_tax",
-  "remit_bir_wtax_rental",
-  "remit_bir_wtax_compensation",
-  "remit_bir_wtax_final",
-  "remit_bir_documentary_stamp",
-  "remit_bir_loa_assessment",
-  "remit_bir_open_cases",
-  "remit_mayors_permit",
-  "remit_cedula",
-  "remit_insurance",
-  "remit_barangay",
-  "remit_fire",
-  "remit_sanitary",
-  "remit_sss_contributions",
-  "remit_sss_loan",
-  "remit_sss_personal_contribution",
-  "remit_philhealth_contributions",
-  "remit_philhealth_personal_contribution",
-  "remit_pagibig_contributions",
-  "remit_pagibig_personal_contribution",
-  "remit_pagibig_loan",
-  "remit_mp2",
-];
 
 // ─── INITIAL STATE ────────────────────────────────────────────────────────────
 const initialForm = {
@@ -150,10 +64,6 @@ const initialForm = {
   annual_meeting_date: "",
   president_name: "",
   corporate_secretary_name: "",
-  // ✅ Fees (Step 7) — all default to empty, rendered as 0.00 placeholder
-  ...Object.fromEntries(FEE_FIELD_KEYS.map((k) => [k, ""])),
-  // ✅ Government Remittances (Step 8)
-  ...Object.fromEntries(REMITTANCE_FIELD_KEYS.map((k) => [k, ""])),
 };
 
 const STEPS = [
@@ -163,8 +73,6 @@ const STEPS = [
   { id: 4, label: "Address & Location" },
   { id: 5, label: "Owner Details" },
   { id: 6, label: "Contact Info" },
-  { id: 7, label: "Fees" },
-  { id: 8, label: "Government Remittances" },
 ];
 
 const generateNextID = async () => {
@@ -214,25 +122,25 @@ const StepBar = ({ current, onStepClick }) => (
               <div
                 className={`flex items-center justify-center w-9 h-9 rounded-full text-xs font-semibold border transition-colors
                   ${active
-                    ? "bg-slate-900 border-slate-900 text-white ring-4 ring-slate-100"
+                    ? "bg-teal-700 border-teal-700 text-white ring-4 ring-teal-100"
                     : done
-                    ? "bg-slate-900 border-slate-900 text-white"
+                    ? "bg-teal-700 border-teal-700 text-white"
                     : "bg-white border-slate-300 text-slate-400 group-hover:border-slate-400 group-hover:text-slate-600"}`}
               >
                 {done ? <FaCheck size={10} /> : step.id}
               </div>
               <span
                 className={`hidden md:block text-[11px] leading-tight text-center w-24 h-7 transition-colors
-                  ${active ? "text-slate-900 font-semibold" : "text-slate-400 font-medium"}`}
+                  ${active ? "text-teal-800 font-semibold" : "text-slate-400 font-medium"}`}
               >
                 {step.label}
               </span>
             </button>
             {idx < STEPS.length - 1 && (
-              <div className={`flex-1 h-px mx-1 md:mx-2 mb-7 transition-colors ${done ? "bg-slate-900" : "bg-slate-200"}`} />
+              <div className={`flex-1 h-px mx-1 md:mx-2 mb-7 transition-colors ${done ? "bg-teal-700" : "bg-slate-200"}`} />
             )}
             {idx < STEPS.length - 1 && (
-              <div className={`flex-1 h-px mx-1 md:mx-2 mb-4 md:mb-5 transition-colors ${done ? "bg-slate-900" : "bg-slate-200"}`} />
+              <div className={`flex-1 h-px mx-1 md:mx-2 mb-4 md:mb-5 transition-colors ${done ? "bg-teal-700" : "bg-slate-200"}`} />
             )}
           </React.Fragment>
         );
@@ -254,7 +162,7 @@ export default function ClientProfile() {
   const [dropdowns, setDropdowns] = useState({
     status: [], business_registration: [], line_of_business: [],
     tax_type: [], source_of_income: [], tax_payer_classification: [],
-    vat_type: [], account: [], rent_fees: [],
+    vat_type: [], account: [],
   });
 
   // Fetch dropdowns
@@ -271,7 +179,6 @@ export default function ClientProfile() {
           supabase.from("tax_payer_classification").select("id, tax_payer_classification").order("id"),
           supabase.from("vat_type").select("id, vat_type").order("id"),
           supabase.from("account").select("id, account").order("account"),
-          supabase.from("rent_fees").select("id, rf_code").order("rf_code"),
         ]);
         setDropdowns({
           status: stat.data || [],
@@ -282,7 +189,6 @@ export default function ClientProfile() {
           tax_payer_classification: tpc.data || [],
           vat_type: vt.data || [],
           account: acct.data || [],
-          rent_fees: rf.data || [],
         });
       } catch (err) {
         console.error(err);
@@ -378,14 +284,6 @@ export default function ClientProfile() {
       const freshID = await generateNextID();
       const isSoleProp = formData.business_registration === "Sole Proprietor";
 
-      // ✅ Build fee_* / remit_* payload from the field-key lists so Step 7/8
-      // stay in sync with what actually gets saved.
-      const feePayload = Object.fromEntries(
-        FEE_FIELD_KEYS.map((k) => [k, parseMoney(formData[k])])
-      );
-      const remittancePayload = Object.fromEntries(
-        REMITTANCE_FIELD_KEYS.map((k) => [k, parseMoney(formData[k])])
-      );
 
       const { error } = await supabase.from("client_profile").insert([{
         client_id: freshID,
@@ -444,10 +342,6 @@ export default function ClientProfile() {
         corporate_secretary_name: formData.corporate_secretary_name,    
         approval_status: "pending",
         account: formData.account || null,
-        created_at: new Date().toISOString(),
-        // ✅ Fees (Step 7) and Government Remittances (Step 8)
-        ...feePayload,
-        ...remittancePayload,
       }]);
 
       if (error) throw error;
@@ -471,8 +365,6 @@ export default function ClientProfile() {
       case 4: return <Step4AddressLocation formData={formData} handleChange={handleChange} setFormData={setFormData} dropdowns={dropdowns} mapInput={mapInput} setMapInput={setMapInput} mapQuery={mapQuery} setMapQuery={setMapQuery} />;
       case 5: return <Step5OwnerDetails   formData={formData} handleChange={handleChange} setFormData={setFormData} />;
       case 6: return <Step6ContactInfo    formData={formData} handleChange={handleChange} />;
-      case 7: return <Step7Fees           formData={formData} handleChange={handleChange} />;
-      case 8: return <Step8GovernmentRemittances formData={formData} handleChange={handleChange} />;
       default: return null;
     }
   };
@@ -509,7 +401,7 @@ export default function ClientProfile() {
             <div className="hidden gap-1 sm:flex">
               {STEPS.map((s) => (
                 <div key={s.id} className={`h-1 w-6 rounded-full transition-colors
-                  ${s.id <= step ? "bg-slate-900" : "bg-slate-200"}`} />
+                  ${s.id <= step ? "bg-teal-700" : "bg-slate-200"}`} />
               ))}
             </div>
           </div>
@@ -517,7 +409,7 @@ export default function ClientProfile() {
           <div className="p-6 md:p-8">
             {message && (
               <div className={`mb-6 p-4 rounded-md border-l-4 text-sm
-                ${messageType === "success" ? "bg-green-50 border-green-500 text-green-700" : "bg-red-50 border-red-500 text-red-700"}`}>
+                ${messageType === "success" ? "bg-emerald-50 border-emerald-500 text-emerald-700" : "bg-red-50 border-red-500 text-red-700"}`}>
                 {message}
               </div>
             )}
@@ -547,7 +439,7 @@ export default function ClientProfile() {
                   <button
                     type="button"
                     onClick={() => setStep((s) => s + 1)}
-                    className="flex items-center gap-2 px-6 py-2.5 text-sm font-medium rounded-md bg-slate-900 hover:bg-slate-800 text-white transition"
+                    className="flex items-center gap-2 px-6 py-2.5 text-sm font-medium rounded-md bg-teal-700 hover:bg-teal-800 text-white transition"
                   >
                     Next <FaChevronRight size={11} />
                   </button>
@@ -556,7 +448,7 @@ export default function ClientProfile() {
                     type="button"
                     onClick={handleSubmit}
                     disabled={loading}
-                    className="flex items-center gap-2 px-8 py-2.5 text-sm font-medium rounded-md bg-slate-900 text-white transition hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="flex items-center gap-2 px-8 py-2.5 text-sm font-medium rounded-md bg-teal-700 text-white transition hover:bg-teal-800 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     <FaPaperPlane size={12} />
                     {loading ? "Submitting..." : "Submit for Approval"}

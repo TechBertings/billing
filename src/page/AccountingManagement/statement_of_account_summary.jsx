@@ -1,11 +1,31 @@
 import React, { useState, useCallback, useRef, useEffect } from "react";
 import { supabase } from "../../lib/supabaseClient";
-import { FaSearch, FaTimes, FaUser, FaPrint, FaFileInvoiceDollar } from "react-icons/fa";
+import { FaSearch, FaTimes, FaUser, FaPrint, FaFileInvoiceDollar, FaFilePdf, FaFilter } from "react-icons/fa";
 
 const GREEN = "#1a5c2e";
 const inputCls =
   "w-full px-3 py-2 text-sm border border-gray-200 rounded-md focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-100 bg-white transition";
 const labelCls = "block text-xs font-medium text-gray-500 mb-1";
+
+// Single source of truth for each status's color + label, used by both the
+// filter pills and the table's status badges so they always match.
+const STATUS_META = {
+  all: { label: "All", dot: "#9ca3af", bg: "#f3f4f6", activeBg: "#374151", color: "#4b5563" },
+  unpaid: { label: "Unpaid", dot: "#d97706", bg: "#fff4e0", activeBg: "#d97706", color: "#a15c00" },
+  paid: { label: "Paid", dot: GREEN, bg: "#e6f4ea", activeBg: GREEN, color: GREEN },
+  overdue: { label: "Overdue", dot: "#dc2626", bg: "#fde8e8", activeBg: "#dc2626", color: "#c0392b" },
+};
+const STATUS_OPTIONS = [
+  { key: "all", ...STATUS_META.all },
+  { key: "unpaid", ...STATUS_META.unpaid },
+  { key: "paid", ...STATUS_META.paid },
+  { key: "overdue", ...STATUS_META.overdue },
+];
+const STATUS_BADGE_STYLE = {
+  paid: { bg: STATUS_META.paid.bg, color: STATUS_META.paid.color, label: "Paid" },
+  unpaid: { bg: STATUS_META.unpaid.bg, color: STATUS_META.unpaid.color, label: "Unpaid" },
+  overdue: { bg: STATUS_META.overdue.bg, color: STATUS_META.overdue.color, label: "Overdue" },
+};
 
 function fmt(n) {
   return Number(n || 0).toLocaleString("en-PH", {
@@ -40,11 +60,18 @@ export default function StatementOfAccountSummary() {
   const [startDate, setStartDate] = useState(firstOfMonth());
   const [endDate, setEndDate] = useState(today());
 
+  // ── Status filter ──
+  const [statusFilter, setStatusFilter] = useState("all");
+
   // ── Ledger ──
   const [loading, setLoading] = useState(false);
   const [ledgerRows, setLedgerRows] = useState([]); // rows inside the period, with running balance
   const [previousBalance, setPreviousBalance] = useState(0);
   const [dueDate, setDueDate] = useState(null);
+
+  // ── Export PDF ──
+  const [exporting, setExporting] = useState(false);
+  const printAreaRef = useRef(null);
 
   useEffect(() => {
     const handler = (e) => {
@@ -108,6 +135,7 @@ export default function StatementOfAccountSummary() {
     setLedgerRows([]);
     setPreviousBalance(0);
     setDueDate(null);
+    setStatusFilter("all");
   };
 
   // ── Build the ledger for the selected client + period ──
@@ -135,45 +163,50 @@ export default function StatementOfAccountSummary() {
         items = itemRows || [];
       }
 
-  const chargeRows = (statements || []).flatMap((b) => {
-  const its = items.filter((i) => i.billing_id === b.id);
+      const chargeRows = (statements || []).flatMap((b) => {
+        const its = items.filter((i) => i.billing_id === b.id);
 
-  if (its.length === 0) {
-    return [{
-      date: b.soa_date,
-      ref: b.soa_number,
-      description: "Statement of Account",
-      amount: 0,
-      payment: 0,
-      due_date: b.due_date,
-    }];
-  }
+        if (its.length === 0) {
+          return [
+            {
+              date: b.soa_date,
+              ref: b.soa_number,
+              description: "Statement of Account",
+              amount: 0,
+              payment: 0,
+              due_date: b.due_date,
+              type: "charge",
+            },
+          ];
+        }
 
-  return its.map((i) => ({
-    date: b.soa_date,
-    ref: b.soa_number,
-    description: i.description || "Statement of Account",
-    amount: Number(i.amount) || 0,
-    payment: 0,
-    due_date: b.due_date,
-  }));
-});
+        return its.map((i) => ({
+          date: b.soa_date,
+          ref: b.soa_number,
+          description: i.description || "Statement of Account",
+          amount: Number(i.amount) || 0,
+          payment: 0,
+          due_date: b.due_date,
+          type: "charge",
+        }));
+      });
 
       // Payments
-      const { data: receipts, error: orErr } = await supabase
-        .from("official_receipts")
-        .select("or_number, payment_date, amount, notes")
-        .eq("client_id", client.client_id)
-        .order("payment_date", { ascending: true });
+     const { data: receipts, error: orErr } = await supabase
+  .from("official_receipts")
+  .select("invoice_number, payment_date, amount, notes")
+  .eq("client_id", client.client_id)
+  .order("payment_date", { ascending: true });
       if (orErr) throw orErr;
 
-      const paymentRows = (receipts || []).map((r) => ({
-        date: r.payment_date,
-        ref: r.or_number,
-        description: r.notes || "Payment Received",
+const paymentRows = (receipts || []).map((r) => ({
+  date: r.payment_date,
+  ref: r.invoice_number,
+  description: r.notes || "Payment Received",
         amount: 0,
         payment: Number(r.amount) || 0,
         due_date: null,
+        type: "payment",
       }));
 
       // Merge + sort chronologically
@@ -196,6 +229,7 @@ export default function StatementOfAccountSummary() {
 
       // Running balance for the printed table, starting from previous balance
       let displayRunning = prevBal;
+      const todayDt = new Date(today());
       const rows = [
         {
           date: start,
@@ -205,10 +239,18 @@ export default function StatementOfAccountSummary() {
           payment: null,
           balance: prevBal,
           isOpening: true,
+          type: "opening",
+          status: prevBal <= 0 ? "paid" : "unpaid",
         },
         ...inPeriod.map((t) => {
           displayRunning += t.amount - t.payment;
-          return { ...t, balance: displayRunning };
+          let status = null;
+          if (t.type === "charge") {
+            if (displayRunning <= 0) status = "paid";
+            else if (t.due_date && new Date(t.due_date) < todayDt) status = "overdue";
+            else status = "unpaid";
+          }
+          return { ...t, balance: displayRunning, status };
         }),
       ];
 
@@ -230,6 +272,8 @@ export default function StatementOfAccountSummary() {
     if (selectedClient) buildStatement(selectedClient, startDate, endDate);
   }, [selectedClient, startDate, endDate, buildStatement]);
 
+  // Totals are always computed from the FULL ledger (account-wide truth),
+  // independent of whatever status filter is currently applied to the view.
   const currentCharges = ledgerRows
     .filter((r) => !r.isOpening)
     .reduce((s, r) => s + (r.amount || 0), 0);
@@ -238,7 +282,76 @@ export default function StatementOfAccountSummary() {
     .reduce((s, r) => s + (r.payment || 0), 0);
   const totalBalanceDue = previousBalance + currentCharges - totalPayments;
 
+  // Rows actually rendered in the table. Strict filtering: when a specific
+  // status is selected, ONLY rows with that exact status are shown — the
+  // opening balance row and payment rows (which have no charge status) drop
+  // out too unless "All" is selected.
+  const visibleRows = ledgerRows.filter((r) => {
+    if (statusFilter === "all") return true;
+    return r.status === statusFilter;
+  });
+
+  // Counts (charge rows only) shown as badges on each filter pill.
+  const statusCounts = ledgerRows.reduce(
+    (acc, r) => {
+      if (r.type === "charge" && r.status) acc[r.status] = (acc[r.status] || 0) + 1;
+      return acc;
+    },
+    { unpaid: 0, paid: 0, overdue: 0 },
+  );
+  statusCounts.all = statusCounts.unpaid + statusCounts.paid + statusCounts.overdue;
+
   const clientAddress = selectedClient?.registered_business_address || "";
+
+  // ── Export as PDF (uses html2canvas + jsPDF, loaded on demand) ──
+  const handleExportPdf = async () => {
+    if (!printAreaRef.current || exporting) return;
+    setExporting(true);
+    try {
+      const [{ default: html2canvas }, { jsPDF }] = await Promise.all([
+        import("html2canvas"),
+        import("jspdf"),
+      ]);
+
+      const node = printAreaRef.current;
+      const canvas = await html2canvas(node, {
+        scale: 2,
+        useCORS: true,
+        backgroundColor: "#ffffff",
+      });
+
+      const imgData = canvas.toDataURL("image/png");
+      const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
+
+      const imgWidth = pageWidth;
+      const imgHeight = (canvas.height * imgWidth) / canvas.width;
+
+      let heightLeft = imgHeight;
+      let position = 0;
+
+      pdf.addImage(imgData, "PNG", 0, position, imgWidth, imgHeight);
+      heightLeft -= pageHeight;
+
+      while (heightLeft > 0) {
+        position = heightLeft - imgHeight;
+        pdf.addPage();
+        pdf.addImage(imgData, "PNG", 0, position, imgWidth, imgHeight);
+        heightLeft -= pageHeight;
+      }
+
+      const fileClient = getClientPrimaryName(selectedClient).replace(/[^\w\-]+/g, "_");
+      pdf.save(`SOA_${fileClient || "statement"}_${endDate}.pdf`);
+    } catch (err) {
+      console.error("PDF export failed:", err);
+      // Fallback: if html2canvas/jspdf aren't installed, fall back to browser print dialog
+      // (user can "Save as PDF" from there).
+      window.print();
+    } finally {
+      setExporting(false);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -316,6 +429,35 @@ export default function StatementOfAccountSummary() {
             <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className={inputCls} />
           </div>
 
+          <div>
+            <label className={labelCls}>
+              <FaFilter size={9} className="inline mr-1 -mt-0.5" />
+              Status
+            </label>
+            <div className="relative">
+              <span
+                className="absolute top-0 bottom-0 left-0 rounded-l-md"
+                style={{ width: 4, background: STATUS_META[statusFilter].dot }}
+              />
+              <select
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+                className="py-2 pl-4 text-xs font-semibold transition border rounded-md cursor-pointer pr-7 focus:outline-none focus:ring-1"
+                style={{
+                  background: STATUS_META[statusFilter].bg,
+                  borderColor: STATUS_META[statusFilter].activeBg,
+                  color: STATUS_META[statusFilter].color,
+                }}
+              >
+                {STATUS_OPTIONS.map((opt) => (
+                  <option key={opt.key} value={opt.key} style={{ color: "#222", background: "#fff" }}>
+                    {opt.label} ({statusCounts[opt.key] ?? 0})
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
           <button
             onClick={() => window.print()}
             disabled={!selectedClient}
@@ -323,6 +465,20 @@ export default function StatementOfAccountSummary() {
             style={{ background: GREEN }}
           >
             <FaPrint size={11} /> Print
+          </button>
+
+          <button
+            onClick={handleExportPdf}
+            disabled={!selectedClient || exporting}
+            className="flex items-center gap-2 px-4 py-2 text-sm font-medium transition border rounded-md disabled:opacity-50"
+            style={{ borderColor: GREEN, color: GREEN, background: "#fff" }}
+          >
+            {exporting ? (
+              <span className="w-3 h-3 border-2 rounded-full border-t-transparent animate-spin" style={{ borderColor: GREEN, borderTopColor: "transparent" }} />
+            ) : (
+              <FaFilePdf size={11} />
+            )}
+            {exporting ? "Exporting..." : "Export PDF"}
           </button>
         </div>
       </div>
@@ -340,11 +496,12 @@ export default function StatementOfAccountSummary() {
             </div>
           ) : (
             <div
+              ref={printAreaRef}
               className="print-area mx-auto bg-white text-[11px]"
               style={{ maxWidth: 900, fontFamily: "Arial, Helvetica Neue, sans-serif" }}
             >
               {/* ── HEADER ── */}
-              <div className="flex items-start justify-between gap-6 p-5" style={{ borderBottom: `3px solid ${GREEN}` }}>
+              <div className="flex items-start justify-between gap-6 p-5 soa-header" style={{ borderBottom: `3px solid ${GREEN}` }}>
                 <div className="flex items-start gap-3">
                   <img
                     src="https://pxzaexutvuatdexgkavk.supabase.co/storage/v1/object/public/assets/fortiserv_logo.png"
@@ -433,59 +590,80 @@ export default function StatementOfAccountSummary() {
                 </div>
               </div>
 
+              {statusFilter !== "all" && (
+                <div
+                  className="flex items-center gap-2 px-5 py-2 mx-5 mt-3 text-xs rounded-md print:mx-0"
+                  style={{ background: STATUS_META[statusFilter].bg, color: STATUS_META[statusFilter].color }}
+                >
+                  <span
+                    className="inline-block rounded-full shrink-0"
+                    style={{ width: 7, height: 7, background: STATUS_META[statusFilter].dot }}
+                  />
+                  Showing <strong>&nbsp;{STATUS_META[statusFilter].label}&nbsp;</strong> line items only
+                  ({statusCounts[statusFilter]} of {statusCounts.all}). Totals above still reflect the full account.
+                </div>
+              )}
+
               {/* ── TRANSACTION TABLE ── */}
-              <table className="w-full" style={{ borderCollapse: "collapse" }}>
+              <table className="w-full soa-table" style={{ borderCollapse: "collapse" }}>
                 <thead>
                   <tr style={{ background: GREEN }}>
-                    {["Date", "SOA #", "Description", "Amount", "Payments", "Balance"].map((h, i) => (
-                      <th
-                        key={h}
-                        className="font-semibold text-white"
-                        style={{
-                          padding: "8px 12px",
-                          fontSize: 9.5,
-                          textAlign: i >= 3 ? "right" : "left",
-                          borderRight: i < 5 ? "1px solid rgba(255,255,255,0.2)" : "none",
-                        }}
-                      >
-                        {h}
-                      </th>
-                    ))}
+     
+{["SOA Date", "Payment Date", "SOA #", "Description", "Amount Due", "Payments", "Balance"].map((h, i) => (
+  <th
+    key={h}
+    className="font-semibold text-white"
+    style={{
+      padding: "8px 12px",
+      fontSize: 9.5,
+      textAlign: i >= 4 ? "right" : "left",
+      borderRight: i < 6 ? "1px solid rgba(255,255,255,0.2)" : "none",
+    }}
+  >
+    {h}
+  </th>
+))}
                   </tr>
                 </thead>
                 <tbody>
-                  {ledgerRows.map((r, i) => (
-                    <tr
-                      key={i}
-                      style={{ background: i % 2 === 0 ? "#fff" : "#f4faf6", borderBottom: "1px solid #e0ede5" }}
-                    >
-                      <td style={{ padding: "7px 12px", borderRight: "1px solid #e0ede5" }}>{fmtLongDate(r.date)}</td>
-                      <td style={{ padding: "7px 12px", fontFamily: "monospace", borderRight: "1px solid #e0ede5" }}>
-                        {r.ref}
-                      </td>
-                      <td style={{ padding: "7px 12px", borderRight: "1px solid #e0ede5" }}>{r.description}</td>
-                      <td style={{ padding: "7px 12px", textAlign: "right", fontFamily: "monospace", borderRight: "1px solid #e0ede5" }}>
-                        {r.amount ? `₱${fmt(r.amount)}` : "—"}
-                      </td>
-                      <td style={{ padding: "7px 12px", textAlign: "right", fontFamily: "monospace", borderRight: "1px solid #e0ede5" }}>
-                        {r.payment ? `₱${fmt(r.payment)}` : "—"}
-                      </td>
-                      <td style={{ padding: "7px 12px", textAlign: "right", fontFamily: "monospace", fontWeight: 600 }}>
-                        ₱{fmt(r.balance)}
-                      </td>
-                    </tr>
+                  {visibleRows.map((r, i) => (
+     
+<tr key={i} style={{ background: i % 2 === 0 ? "#fff" : "#f4faf6", borderBottom: "1px solid #e0ede5" }}>
+  <td style={{ padding: "7px 12px", borderRight: "1px solid #e0ede5" }}>
+    {r.type !== "payment" ? fmtLongDate(r.date) : "—"}
+  </td>
+  <td style={{ padding: "7px 12px", borderRight: "1px solid #e0ede5" }}>
+    {r.type === "payment" ? fmtLongDate(r.date) : "—"}
+  </td>
+  <td style={{ padding: "7px 12px", fontFamily: "monospace", borderRight: "1px solid #e0ede5" }}>
+    {r.ref}
+  </td>
+  <td style={{ padding: "7px 12px", borderRight: "1px solid #e0ede5" }}>{r.description}</td>
+  <td style={{ padding: "7px 12px", textAlign: "right", fontFamily: "monospace", borderRight: "1px solid #e0ede5" }}>
+    {r.amount ? `₱${fmt(r.amount)}` : "—"}
+  </td>
+  <td style={{ padding: "7px 12px", textAlign: "right", fontFamily: "monospace", borderRight: "1px solid #e0ede5" }}>
+    {r.payment ? `₱${fmt(r.payment)}` : "—"}
+  </td>
+  <td style={{ padding: "7px 12px", textAlign: "right", fontFamily: "monospace", fontWeight: 600 }}>
+    ₱{fmt(r.balance)}
+  </td>
+</tr>
                   ))}
-                  {ledgerRows.length <= 1 && (
+                  {visibleRows.length === 0 && (
                     <tr>
-                      <td colSpan={6} className="py-6 text-xs text-center text-gray-400">
-                        No transactions within this period.
+                      <td colSpan={7} className="py-8 text-xs text-center text-gray-400">
+                        <FaFilter size={16} className="mx-auto mb-2 text-gray-300" />
+                        {statusFilter === "all"
+                          ? "No transactions within this period."
+                          : `No "${STATUS_META[statusFilter].label}" line items in this period.`}
                       </td>
                     </tr>
                   )}
                 </tbody>
               </table>
 
-              <div className="flex items-center justify-end gap-3 p-4" style={{ borderTop: `2px solid ${GREEN}` }}>
+              <div className="flex items-center justify-end gap-3 p-4 soa-footer" style={{ borderTop: `2px solid ${GREEN}` }}>
                 <span className="text-sm font-medium text-gray-600">Account Outstanding Balance</span>
                 <span
                   className="px-4 py-2 font-mono text-lg font-bold border-2 rounded-md"
@@ -526,6 +704,13 @@ export default function StatementOfAccountSummary() {
           .print-area, .print-area * { visibility: visible; }
           .print-area { position: fixed; top: 0; left: 0; width: 100%; font-size: 9px; }
           @page { size: A4 portrait; margin: 8mm; }
+
+          /* Multi-page pagination support: repeat the table header on every
+             printed page and never split a row across a page break. */
+          .soa-table thead { display: table-header-group; }
+          .soa-table tr { page-break-inside: avoid; break-inside: avoid; }
+          .soa-header { page-break-after: avoid; }
+          .soa-footer { page-break-inside: avoid; }
         }
       `}</style>
     </div>

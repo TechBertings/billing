@@ -5,6 +5,7 @@ import {
     FaUsers,
     FaMoneyBillWave,
     FaCalculator,
+    FaCoins,
     FaFolder,
     FaCheck,
     FaChartBar,
@@ -41,9 +42,6 @@ export const getAllMenuItems = () => [
             { icon: <FaUser />, label: 'Create Client Profile', path: 'ClientProfile' },
             { icon: <FaUser />, label: 'Client Profile List', path: 'ClientProfileList' },
             { icon: <FaUsers />, label: 'Create Employees Profile', path: 'EmployeeProfile' },
-           // { icon: <FaUsers />, label: 'Employees Profile List', path: 'employees-list' },
-           // { icon: <FaClipboardList />, label: 'Billing Information', path: 'BillingInformation' },
-           // { icon: <FaClipboardList />, label: 'Job Orders', path: 'JobOrder' , badge: true},
         ]
     },
     {
@@ -52,40 +50,27 @@ export const getAllMenuItems = () => [
         path: 'accounting-management',
         category: 'Portals',
         submenu: [
-             { icon: <FaChartBar />, label: 'Account Summary', path: 'StatementOfAccountSummary' },
-           { icon: <FaHistory />, label: 'Bank Reconciliation', path: 'BankReconciliation' },
-              { icon: <FaFileAlt />, label: 'Chart of Accounts', path: 'ChartOfAccounts' },
-               { icon: <FaFileInvoiceDollar />, label: 'Create Billing', path: 'CreateBilling' },
-           { icon: <FaClipboardList />, label: 'Receivables List', path: 'ReceivablesList' }, 
-             { icon: <FaCreditCard />, label: 'Record Payment', path: 'RecordPayment' },
-          //  { icon: <FaMoneyBillWave />, label: 'Remittances', path: 'remittances' },
-        
-            
+            { icon: <FaChartBar />, label: 'Account Summary', path: 'StatementOfAccountSummary' },
+            { icon: <FaHistory />, label: 'Bank Reconciliation', path: 'BankReconciliation' },
+            { icon: <FaFileAlt />, label: 'Chart of Accounts', path: 'ChartOfAccounts' },
+            { icon: <FaFileInvoiceDollar />, label: 'Create Billing', path: 'CreateBilling' },
+            { icon: <FaClipboardList />, label: 'Receivables List', path: 'ReceivablesList' },
+            { icon: <FaCreditCard />, label: 'Record Payment', path: 'RecordPayment' },
+            { icon: <FaCoins />, label: 'Undeposited Funds', path: 'UndepositedFunds' },
         ]
     },
     {
-       icon: <FaChartBar />,
+        icon: <FaChartBar />,
         label: 'Reports',
         path: 'reports',
         category: 'Portals',
-        submenu: [{ icon: <FaExclamationTriangle />, label: 'Collections & Receivables', path: 'ARAgingReport' },
+        submenu: [
+            { icon: <FaExclamationTriangle />, label: 'Collections & Receivables', path: 'ARAgingReport' },
             { icon: <FaChartLine />, label: 'Financial Reports', path: 'FinancialReports' },
             { icon: <FaFileAlt />, label: 'Transmittal Report', path: 'TransmittalReport' },
+            { icon: <FaHistory />, label: 'Audit Trail', path: 'AuditTrail' },
         ]
     },
-  /*  {
-        icon: <FaTools />,
-        label: 'Tools',
-        path: 'tools',
-        category: 'Tools',
-        description: 'All business tools in one place',
-        submenu: [
-         //   { icon: <FaFileAlt />, label: 'Transmittal Form', path: 'tools-transmittal' },
-         //   { icon: <FaFolder />, label: 'File Smart', path: 'tools-file-smart' },
-         //   { icon: <FaCheck />, label: 'Data Verifier', path: 'tools-data-verifier' },
-          //  { icon: <FaCalculator />, label: 'Calculator', path: 'tools-calculator' },
-        ]
-    }, */
     {
         icon: <FaClipboardCheck />,
         label: 'For Approval',
@@ -94,20 +79,8 @@ export const getAllMenuItems = () => [
         submenu: [
             { icon: <FaUser />, label: 'Client Profile', path: 'ClientApproval', badge: true },
             { icon: <FaClipboardCheck />, label: 'Statement of Account', path: 'SOAApproval', badge: true },
-        //    { icon: <FaUsers />, label: 'Employee Profile', path: 'approval-employee-profile', badge: true },
-         //   { icon: <FaClipboardList />, label: 'Payroll Processing', path: 'approval-payroll', badge: true },
-           // { icon: <FaFileInvoiceDollar />, label: 'Billing', path: 'approval-billing', badge: true },
-           // { icon: <FaCreditCard />, label: 'Record Payment', path: 'approval-payment', badge: true },
-          //  { icon: <FaMoneyBillWave />, label: 'Remittances', path: 'approval-remittances', badge: true },
-           // { icon: <FaHistory />, label: 'Bank Reconciliation', path: 'approval-bank-recon', badge: true },
-           // { icon: <FaFileAlt />, label: 'Transmittal Form', path: 'approval-transmittal', badge: true },
         ]
     },
-   /*{
-        icon: <FaHistory />,
-        label: 'Transaction History',
-        path: 'transaction-history'
-    },*/
     {
         icon: <FaCog />,
         label: 'System Settings',
@@ -125,7 +98,6 @@ export const getAllMenuItems = () => [
 ];
 
 // ─── Floating popup rendered via React Portal ────────────────────────────────
-// This escapes the sidebar's overflow-hidden so it's never clipped.
 const CollapsedSubmenuPopup = ({ item, anchorRect, onNavigate, currentPage, onMouseEnter, onMouseLeave }) => {
     const POPUP_LEFT = anchorRect.right + 10;
     const POPUP_TOP  = anchorRect.top;
@@ -133,13 +105,13 @@ const CollapsedSubmenuPopup = ({ item, anchorRect, onNavigate, currentPage, onMo
     return ReactDOM.createPortal(
         <div
             style={{ position: 'fixed', top: POPUP_TOP, left: POPUP_LEFT, zIndex: 9999 }}
-            className="overflow-hidden bg-white border shadow-2xl rounded-xl border-slate-200 min-w-52"
+            className="overflow-hidden bg-white border shadow-lg rounded-xl border-slate-100 min-w-52"
             onMouseEnter={onMouseEnter}
             onMouseLeave={onMouseLeave}
         >
             {/* Header */}
-            <div className="px-4 py-2.5 bg-gradient-to-r from-blue-500 to-indigo-600 text-white text-sm font-semibold flex items-center gap-2">
-                <span className="text-base">{item.icon}</span>
+            <div className="px-4 py-2.5 bg-slate-50 border-b border-slate-100 text-slate-700 text-xs font-semibold uppercase tracking-wider flex items-center gap-2">
+                <span className="text-sm text-emerald-500">{item.icon}</span>
                 {item.label}
             </div>
 
@@ -159,17 +131,17 @@ const CollapsedSubmenuPopup = ({ item, anchorRect, onNavigate, currentPage, onMo
                                 flex items-center gap-3 px-4 py-2.5 text-sm cursor-pointer
                                 transition-colors duration-150
                                 ${currentPage === subitem.path
-                                    ? 'bg-blue-50 text-blue-600 font-semibold'
-                                    : 'text-slate-700 hover:bg-slate-50 hover:text-slate-900'
+                                    ? 'bg-slate-100 text-slate-900 font-semibold'
+                                    : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
                                 }
                             `}
                         >
-                            <span className={`text-xs flex-shrink-0 ${currentPage === subitem.path ? 'text-blue-500' : 'text-slate-400'}`}>
+                            <span className={`text-xs flex-shrink-0 ${currentPage === subitem.path ? 'text-emerald-500' : 'text-slate-400'}`}>
                                 {subitem.icon}
                             </span>
                             {subitem.label}
                             {currentPage === subitem.path && (
-                                <div className="w-2 h-2 ml-auto bg-blue-500 rounded-full animate-pulse" />
+                                <div className="w-1.5 h-1.5 ml-auto bg-emerald-500 rounded-full" />
                             )}
                         </div>
                     </li>
@@ -201,7 +173,6 @@ const Sidebar = ({ isOpen, onNavigate, currentPage, currentUser }) => {
         loadAndFilterMenu();
     }, [currentUser]);
 
-    // Close popup when sidebar expands
     useEffect(() => {
         if (isOpen) closePopup();
     }, [isOpen]);
@@ -236,7 +207,7 @@ const Sidebar = ({ isOpen, onNavigate, currentPage, currentUser }) => {
             text: 'Are you sure you want to log out?',
             icon: 'question',
             showCancelButton: true,
-            confirmButtonColor: '#3b82f6',
+            confirmButtonColor: '#10b981',
             cancelButtonColor: '#94a3b8',
             confirmButtonText: 'Yes, log out',
             cancelButtonText: 'Cancel',
@@ -245,7 +216,6 @@ const Sidebar = ({ isOpen, onNavigate, currentPage, currentUser }) => {
         if (result.isConfirmed) {
             onNavigate('login');
         }
-        // Cancelled → do nothing, stay on current page
     };
 
     const handleRowMouseEnter = (e, item) => {
@@ -259,22 +229,19 @@ const Sidebar = ({ isOpen, onNavigate, currentPage, currentUser }) => {
         <>
             <aside className={`
                 fixed top-16 left-0 h-[calc(100vh-4rem)]
-                bg-gradient-to-b from-slate-50 to-white
+                bg-white
                 transition-all duration-300 z-20
-                shadow-xl border-r border-slate-200/60
+                border-r border-slate-100
                 ${isOpen ? 'w-72' : 'w-20'}
             `}>
-                {/* Top accent bar */}
-                <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-blue-500 via-indigo-500 to-purple-500" />
-
                 <div className="h-full overflow-x-hidden overflow-y-auto custom-scrollbar">
                     <nav className="px-3 py-6">
-                        <ul className="space-y-1.5">
+                        <ul className="space-y-0.5">
                             {filteredMenuItems.map((item, index) => (
                                 <li key={index}>
                                     {/* Category label */}
                                     {item.category && isOpen && index > 0 && filteredMenuItems[index - 1]?.category !== item.category && (
-                                        <div className="px-3.5 py-3 text-xs font-bold text-slate-400 uppercase tracking-wider mt-4">
+                                        <div className="px-3.5 py-3 text-[11px] font-semibold text-slate-400 uppercase tracking-wider mt-4">
                                             {item.category}
                                         </div>
                                     )}
@@ -293,40 +260,26 @@ const Sidebar = ({ isOpen, onNavigate, currentPage, currentUser }) => {
                                             }
                                         }}
                                         className={`
-                                            group relative flex items-center justify-between rounded-xl cursor-pointer
-                                            transition-all duration-300 ease-in-out
-                                            ${isOpen ? 'px-3.5 py-3' : 'p-2.5'}
+                                            group relative flex items-center justify-between rounded-lg cursor-pointer
+                                            transition-colors duration-150
+                                            ${isOpen ? 'px-3 py-2.5' : 'p-2.5'}
                                             ${currentPage === item.path
-                                                ? isOpen
-                                                    ? 'bg-gradient-to-r from-blue-500 to-indigo-600 text-white shadow-lg shadow-blue-500/30 scale-[1.02]'
-                                                    : 'bg-blue-500 text-white shadow-lg shadow-blue-500/30'
-                                                : isOpen
-                                                    ? 'hover:bg-white text-slate-700 hover:text-slate-900 hover:shadow-md hover:scale-[1.01]'
-                                                    : 'text-slate-600 hover:bg-blue-50 hover:shadow-md'
+                                                ? 'bg-slate-100 text-slate-900 font-medium'
+                                                : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800'
                                             }
                                         `}
                                     >
                                         <div className={`flex items-center flex-1 min-w-0 ${isOpen ? '' : 'justify-center w-full'}`}>
-                                            {/* Icon box */}
-                                            <div className={`
-                                                flex items-center justify-center rounded-lg flex-shrink-0
-                                                transition-all duration-300
-                                                ${isOpen ? 'w-9 h-9' : 'w-10 h-10'}
-                                                ${currentPage === item.path
-                                                    ? isOpen
-                                                        ? 'bg-white/20 text-white'
-                                                        : 'bg-blue-500 text-white shadow-lg shadow-blue-500/40'
-                                                    : isOpen
-                                                        ? 'bg-slate-100 text-slate-600 group-hover:bg-blue-50 group-hover:text-blue-600'
-                                                        : 'bg-slate-100 text-slate-700 group-hover:bg-blue-100 group-hover:text-blue-600'
-                                                }
+                                            <span className={`
+                                                text-base flex-shrink-0
+                                                ${currentPage === item.path ? 'text-emerald-500' : 'text-slate-400 group-hover:text-slate-600'}
                                             `}>
-                                                <span className="text-lg">{item.icon}</span>
-                                            </div>
+                                                {item.icon}
+                                            </span>
 
                                             {/* Label */}
                                             <span className={`
-                                                ml-3.5 font-medium whitespace-nowrap
+                                                ml-3 text-sm whitespace-nowrap
                                                 transition-all duration-300
                                                 ${isOpen ? 'opacity-100 translate-x-0' : 'opacity-0 -translate-x-4 w-0'}
                                             `}>
@@ -337,19 +290,23 @@ const Sidebar = ({ isOpen, onNavigate, currentPage, currentUser }) => {
                                         {/* Chevron (expanded mode) */}
                                         {item.submenu && isOpen && (
                                             <div className={`
-                                                transition-transform duration-300 flex-shrink-0
+                                                transition-transform duration-300 flex-shrink-0 text-slate-400
                                                 ${expandedMenus[item.path] ? 'rotate-0' : '-rotate-90'}
-                                                ${currentPage === item.path ? 'text-white' : 'text-slate-400'}
                                             `}>
-                                                <FaChevronDown size={11} />
+                                                <FaChevronDown size={10} />
                                             </div>
+                                        )}
+
+                                        {/* "+" badge indicator like reference (only when not showing chevron) */}
+                                        {!item.submenu && item.badge && isOpen && (
+                                            <span className="text-xs font-medium text-slate-300">+</span>
                                         )}
 
                                         {/* Simple tooltip for collapsed items WITHOUT submenu */}
                                         {!isOpen && !item.submenu && (
-                                            <div className="absolute z-50 invisible px-3 py-2 ml-4 text-sm font-medium text-white transition-all duration-200 rounded-lg shadow-xl opacity-0 pointer-events-none left-full bg-slate-900 group-hover:opacity-100 group-hover:visible whitespace-nowrap">
+                                            <div className="absolute z-50 invisible px-3 py-2 ml-4 text-sm font-medium text-white transition-all duration-200 rounded-lg shadow-lg opacity-0 pointer-events-none left-full bg-slate-800 group-hover:opacity-100 group-hover:visible whitespace-nowrap">
                                                 {item.label}
-                                                <div className="absolute right-full top-1/2 -translate-y-1/2 border-[6px] border-transparent border-r-slate-900" />
+                                                <div className="absolute right-full top-1/2 -translate-y-1/2 border-[6px] border-transparent border-r-slate-800" />
                                             </div>
                                         )}
                                     </div>
@@ -358,28 +315,31 @@ const Sidebar = ({ isOpen, onNavigate, currentPage, currentUser }) => {
                                     {item.submenu && isOpen && (
                                         <div className={`
                                             overflow-hidden transition-all duration-300 ease-in-out
-                                            ${expandedMenus[item.path] ? 'max-h-96 opacity-100 mt-1.5' : 'max-h-0 opacity-0'}
+                                            ${expandedMenus[item.path] ? 'max-h-96 opacity-100 mt-1' : 'max-h-0 opacity-0'}
                                         `}>
-                                            <ul className="ml-4 pl-4 border-l-2 border-slate-200 space-y-0.5">
+                                            <ul className="ml-4 pl-4 border-l border-slate-100 space-y-0.5">
                                                 {item.submenu.map((subitem, si) => (
                                                     <li key={si}>
                                                         <div
                                                             onClick={() => onNavigate(subitem.path)}
                                                             className={`
-                                                                flex items-center px-3 py-2.5 rounded-lg text-sm font-medium cursor-pointer
-                                                                transition-all duration-200 group/sub
+                                                                flex items-center px-3 py-2 rounded-lg text-sm cursor-pointer
+                                                                transition-colors duration-150 group/sub
                                                                 ${currentPage === subitem.path
-                                                                    ? 'bg-blue-50 text-blue-600 shadow-sm'
-                                                                    : 'hover:bg-slate-50 text-slate-600 hover:text-slate-900'
+                                                                    ? 'bg-slate-100 text-slate-900 font-medium'
+                                                                    : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800'
                                                                 }
                                                             `}
                                                         >
-                                                            <span className={`text-xs mr-3 ${currentPage === subitem.path ? 'text-blue-500' : 'text-slate-400 group-hover/sub:text-slate-600'}`}>
+                                                            <span className={`text-xs mr-3 ${currentPage === subitem.path ? 'text-emerald-500' : 'text-slate-400 group-hover/sub:text-slate-600'}`}>
                                                                 {subitem.icon}
                                                             </span>
                                                             <span className="flex-1">{subitem.label}</span>
                                                             {currentPage === subitem.path && (
-                                                                <div className="w-2 h-2 bg-blue-600 rounded-full animate-pulse" />
+                                                                <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full" />
+                                                            )}
+                                                            {subitem.badge && currentPage !== subitem.path && (
+                                                                <span className="text-xs font-medium text-slate-300">+</span>
                                                             )}
                                                         </div>
                                                     </li>
@@ -396,8 +356,8 @@ const Sidebar = ({ isOpen, onNavigate, currentPage, currentUser }) => {
                 <style jsx>{`
                     .custom-scrollbar::-webkit-scrollbar { width: 6px; }
                     .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
-                    .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
-                    .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+                    .custom-scrollbar::-webkit-scrollbar-thumb { background: #e2e8f0; border-radius: 10px; }
+                    .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #cbd5e1; }
                 `}</style>
             </aside>
 
