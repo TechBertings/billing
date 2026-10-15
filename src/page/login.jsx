@@ -63,12 +63,14 @@ function Login({ onLogin }) {
       }
 
       // Successful login
-      onLogin({
+         onLogin({
         id: data.id,
         username: data.username,
         email: data.email,
         fullName: data.full_name,
+        full_name: data.full_name,
         role: data.role,
+        image_url: data.image_url || null,
         timestamp: new Date().toISOString()
       });
     } catch (err) {

@@ -2,8 +2,9 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../../lib/supabaseClient';
 import {
   FaCheckCircle, FaTimes, FaEnvelope, FaEye, FaSearch,
-  FaExclamationTriangle, FaClock, FaChevronDown, FaPrint,
-  FaUndo, FaFileInvoiceDollar,
+  FaExclamationTriangle, FaClock, FaPrint,
+  FaUndo, FaFileInvoiceDollar, FaChevronLeft, FaChevronRight,
+  FaSyncAlt,
 } from 'react-icons/fa';
 import { LOGO_B64 } from '../../logo_b64';
 import { useApprovalPermission } from '../../hooks/approval_permission';
@@ -19,12 +20,42 @@ function fmtDate(d) {
     : '—';
 }
 
+// ── Override ng default 1000-row limit ng Supabase ──
+// Kumukuha nang paisa-isang batch (1000) hanggang maubos ang rows.
+// buildQuery = () => supabase.from(...).select(...).eq(...)  (WALANG range)
+const fetchAllRows = async (buildQuery, batchSize = 1000) => {
+  let all = [];
+  let from = 0;
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
+    const { data, error } = await buildQuery().range(from, from + batchSize - 1);
+    if (error) throw error;
+    all = all.concat(data || []);
+    if (!data || data.length < batchSize) break;
+    from += batchSize;
+  }
+  return all;
+};
+
+// Kunin ang page numbers na may "..." (hal. 1 ... 4 5 6 ... 20)
+const getPageNumbers = (current, total) => {
+  if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
+  const pages = [1];
+  const start = Math.max(2, current - 1);
+  const end = Math.min(total - 1, current + 1);
+  if (start > 2) pages.push('...');
+  for (let i = start; i <= end; i++) pages.push(i);
+  if (end < total - 1) pages.push('...');
+  pages.push(total);
+  return pages;
+};
+
 // ── Email HTML builder (same as CreateBilling) ──
 function buildSOAEmailHTML({
   billTo, tradeName = '', address = '',
   soaNumber, soaDate, dueDate,
   items, subtotal, downPayment, withholdingTax, totalDue,
-  notes, approvedBy,
+   notes, approvedBy, preparedBy = '',
 }) {
   const fmtN = (n) =>
     Number(n || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -111,11 +142,12 @@ function buildSOAEmailHTML({
           <td><div style="font-weight:700;color:#222;font-size:8.5px;">BANK TRANSFER/DEPOSIT</div><div style="color:#555;font-size:8px;">Account Name:</div><div style="font-weight:700;color:#222;font-size:8px;">FORTISERV BUSINESS MANAGEMENT ENTERPRISE CO.</div></td>
         </tr></table>
         <table cellpadding="0" cellspacing="0" style="background:#fef2f2;border-radius:4px;padding:4px 6px;margin-bottom:4px;width:100%;"><tr>
-<td style="padding-right:8px;"><img src="https://pxzaexutvuatdexgkavk.supabase.co/storage/v1/object/public/assets/chinabank.png" height="20" style="display:block;object-fit:contain;" /></td>
+          <td style="padding-right:8px;"><img src="https://pxzaexutvuatdexgkavk.supabase.co/storage/v1/object/public/assets/chinabank.png" height="20" style="display:block;object-fit:contain;" /></td>
           <td><div style="font-size:7.5px;color:#333;">Bank: China Bank Corporation</div><div style="font-size:7.5px;color:#555;">Account Number: 1307000000077</div></td>
         </tr></table>
         <table cellpadding="0" cellspacing="0" style="background:#eff4fb;border-radius:4px;padding:4px 6px;width:100%;"><tr>
-<td style="padding-right:8px;"><img src="https://pxzaexutvuatdexgkavk.supabase.co/storage/v1/object/public/assets/bdo_logo.jpg" height="20" style="display:block;object-fit:contain;" /></td>          <td><div style="font-size:7.5px;color:#333;">Bank: Banco De Oro</div><div style="font-size:7.5px;color:#555;">Account Number: 004500601972</div></td>
+          <td style="padding-right:8px;"><img src="https://pxzaexutvuatdexgkavk.supabase.co/storage/v1/object/public/assets/bdo_logo.jpg" height="20" style="display:block;object-fit:contain;" /></td>
+          <td><div style="font-size:7.5px;color:#333;">Bank: Banco De Oro</div><div style="font-size:7.5px;color:#555;">Account Number: 004500601972</div></td>
         </tr></table>
       </td>
       <td width="33%" valign="top" style="padding:14px 16px;border-right:1px solid #dceee3;font-size:8.5px;">
@@ -134,7 +166,7 @@ function buildSOAEmailHTML({
   </table>
   <table width="100%" cellpadding="0" cellspacing="0" style="border-top:1px solid #dceee3;">
     <tr>
-      <td style="padding:16px 24px;font-size:9.5px;color:#555;width:50%;">Prepared by:<br/><div style="border-bottom:1px solid #999;height:32px;margin:6px 0;"></div><strong style="color:#333;">${approvedBy || 'Billing Officer'}</strong><br/><span>Billing Officer</span></td>
+      <td style="padding:16px 24px;font-size:9.5px;color:#555;width:50%;">Prepared by:<br/><div style="border-bottom:1px solid #999;height:32px;margin:6px 0;"></div><strong style="color:#333;">${preparedBy || '—'}</strong><br/><span>Billing Officer</span></td>
       <td style="padding:16px 24px;font-size:9.5px;color:#555;width:50%;">Received By:<br/><div style="border-bottom:1px solid #999;height:32px;margin:6px 0;"></div>Designation: <span style="display:inline-block;width:130px;border-bottom:1px solid #999;vertical-align:bottom;">&nbsp;</span><br/><br/>Date Received: <span style="display:inline-block;width:100px;border-bottom:1px solid #999;vertical-align:bottom;">&nbsp;</span></td>
     </tr>
   </table>
@@ -214,9 +246,18 @@ const RejectModal = ({ soa, onConfirm, onClose, loading }) => {
 // ════════════════════════════════════════════════════════════════
 export default function SOAApproval({ currentUser }) {
   const [soaList, setSoaList]           = useState([]);
+  const [totalsMap, setTotalsMap]       = useState({});
   const [loading, setLoading]           = useState(true);
+  const [searchInput, setSearchInput]   = useState('');
   const [search, setSearch]             = useState('');
   const [filterStatus, setFilterStatus] = useState('pending_approval');
+
+  // Pagination
+  const [page, setPage]             = useState(1);
+  const [pageSize, setPageSize]     = useState(10);
+  const [totalCount, setTotalCount] = useState(0);
+  const [pendingCount, setPendingCount]   = useState(0);
+  const [approvedCount, setApprovedCount] = useState(0);
 
   // Preview modal
   const [previewSOA, setPreviewSOA]     = useState(null);
@@ -235,28 +276,95 @@ export default function SOAApproval({ currentUser }) {
   const { canApprove: isApprover } = useApprovalPermission(currentUser, 'SOAApproval');
   const logoBase64   = LOGO_B64;
 
-  // ── Fetch SOAs ──
+  // ── Debounce search (balik sa page 1 kapag nag-search) ──
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setSearch(searchInput.trim());
+      setPage(1);
+    }, 300);
+    return () => clearTimeout(t);
+  }, [searchInput]);
+
+  // ── Tab counts (hiwalay na query, hindi apektado ng tab/page) ──
+  const fetchCounts = useCallback(async () => {
+    const [pending, approved] = await Promise.all([
+      supabase
+        .from('billing_statements')
+        .select('id', { count: 'exact', head: true })
+        .eq('status', 'pending_approval'),
+      supabase
+        .from('billing_statements')
+        .select('id', { count: 'exact', head: true })
+        .eq('status', 'approved'),
+    ]);
+    setPendingCount(pending.count || 0);
+    setApprovedCount(approved.count || 0);
+  }, []);
+
+  // ── Fetch SOAs (server-side pagination + search) ──
   const fetchSOAs = useCallback(async () => {
     setLoading(true);
     try {
+      const from = (page - 1) * pageSize;
+      const to = from + pageSize - 1;
+
       let query = supabase
         .from('billing_statements')
-        .select('*')
-        .order('created_at', { ascending: false });
+        .select('*', { count: 'exact' })
+        .order('created_at', { ascending: false })
+        .order('id', { ascending: false });
 
-      if (filterStatus !== 'all') {
-        query = query.eq('status', filterStatus);
+      if (filterStatus !== 'all') query = query.eq('status', filterStatus);
+
+      if (search) {
+        // tanggalin ang mga character na sumisira sa .or() filter
+        const q = search.replace(/[,()%]/g, ' ').trim();
+        if (q) {
+          query = query.or(
+            `soa_number.ilike.%${q}%,bill_to.ilike.%${q}%,client_id.ilike.%${q}%`
+          );
+        }
       }
 
-      const { data, error } = await query;
+      const { data, count, error } = await query.range(from, to);
       if (error) throw error;
-      setSoaList(data || []);
+
+      // Kung wala nang laman ang page na ito (hal. na-reject ang huling item), umatras
+      if ((data || []).length === 0 && page > 1 && (count || 0) > 0) {
+        setPage(Math.max(1, Math.ceil(count / pageSize)));
+        return;
+      }
+
+      const list = data || [];
+      setSoaList(list);
+      setTotalCount(count || 0);
+
+      // Totals: sum ng items ng mga SOA sa page na ito (lampas 1000 rows OK)
+      if (list.length) {
+        const ids = list.map((s) => s.id);
+        const allItems = await fetchAllRows(() =>
+          supabase
+            .from('billing_items')
+            .select('id, billing_id, amount')
+            .in('billing_id', ids)
+            .order('id', { ascending: true })
+        );
+        const sums = {};
+        allItems.forEach((i) => {
+          sums[i.billing_id] = (sums[i.billing_id] || 0) + (parseFloat(i.amount) || 0);
+        });
+        setTotalsMap(sums);
+      } else {
+        setTotalsMap({});
+      }
+
+      fetchCounts();
     } catch (err) {
       setMessage(`Failed to load SOAs: ${err.message}`);
       setMessageType('error');
     }
     setLoading(false);
-  }, [filterStatus]);
+  }, [filterStatus, search, page, pageSize, fetchCounts]);
 
   useEffect(() => { fetchSOAs(); }, [fetchSOAs]);
 
@@ -265,21 +373,28 @@ export default function SOAApproval({ currentUser }) {
     setPreviewLoading(true);
     setPreviewSOA(soa);
     setPreviewItems([]);
-    const { data } = await supabase
-      .from('billing_items')
-      .select('*')
-      .eq('billing_id', soa.id)
-      .order('id', { ascending: true });
-    setPreviewItems(data || []);
+    try {
+      const data = await fetchAllRows(() =>
+        supabase
+          .from('billing_items')
+          .select('*')
+          .eq('billing_id', soa.id)
+          .order('id', { ascending: true })
+      );
+      setPreviewItems(data || []);
+    } catch (err) {
+      setMessage(`Failed to load items: ${err.message}`);
+      setMessageType('error');
+    }
     setPreviewLoading(false);
   };
 
   // ── Computed totals from items ──
   const computeTotals = (soa, items) => {
-    const subtotal     = items.reduce((s, i) => s + (parseFloat(i.amount) || 0), 0);
-    const downPayment  = parseFloat(soa.down_payment) || 0;
+    const subtotal       = items.reduce((s, i) => s + (parseFloat(i.amount) || 0), 0);
+    const downPayment    = parseFloat(soa.down_payment) || 0;
     const withholdingTax = parseFloat(soa.withholding_tax) || 0;
-    const totalDue     = subtotal - downPayment - withholdingTax;
+    const totalDue       = subtotal - downPayment - withholdingTax;
     return { subtotal, downPayment, withholdingTax, totalDue };
   };
 
@@ -287,11 +402,14 @@ export default function SOAApproval({ currentUser }) {
   const handleApproveAndEmail = async (soa) => {
     setActionLoading(p => ({ ...p, [soa.id]: 'approving' }));
     try {
-      // 1. Fetch items
-      const { data: items } = await supabase
-        .from('billing_items')
-        .select('*')
-        .eq('billing_id', soa.id);
+      // 1. Fetch items (walang 1000 limit)
+      const items = await fetchAllRows(() =>
+        supabase
+          .from('billing_items')
+          .select('*')
+          .eq('billing_id', soa.id)
+          .order('id', { ascending: true })
+      );
 
       const { subtotal, downPayment, withholdingTax, totalDue } = computeTotals(soa, items || []);
 
@@ -320,9 +438,11 @@ export default function SOAApproval({ currentUser }) {
         totalDue,
         notes:           soa.notes,
         approvedBy:      userFullName,
+        preparedBy:      soa.created_by_name || '',
       });
 
-      // 4. Update status → sent
+
+      // 4. Update status → approved
       const { error: updateErr } = await supabase
         .from('billing_statements')
         .update({ status: 'approved', approved_by: userFullName, approved_at: new Date().toISOString() })
@@ -363,8 +483,7 @@ export default function SOAApproval({ currentUser }) {
       setMessageType('success');
       fetchSOAs();
 
-      // Refresh preview if open
-      if (previewSOA?.id === soa.id) setPreviewSOA(p => ({ ...p, status: 'sent' }));
+      if (previewSOA?.id === soa.id) setPreviewSOA(p => ({ ...p, status: 'approved' }));
 
     } catch (err) {
       setMessage(`Error: ${err.message}`);
@@ -382,10 +501,10 @@ export default function SOAApproval({ currentUser }) {
       const { error } = await supabase
         .from('billing_statements')
         .update({
-          status:          'draft',
+          status:           'draft',
           rejection_reason: reason || null,
-          rejected_by:     userFullName,
-          rejected_at:     new Date().toISOString(),
+          rejected_by:      userFullName,
+          rejected_at:      new Date().toISOString(),
         })
         .eq('id', soa.id);
       if (error) throw error;
@@ -403,22 +522,26 @@ export default function SOAApproval({ currentUser }) {
     setTimeout(() => setMessage(''), 5000);
   };
 
-  // ── Filtered list ──
-  const filtered = soaList.filter(s => {
-    const q = search.toLowerCase();
-    return !q
-      || s.soa_number?.toLowerCase().includes(q)
-      || s.bill_to?.toLowerCase().includes(q)
-      || s.client_id?.toLowerCase().includes(q);
-  });
-
   const statusTabs = [
-    { key: 'pending_approval', label: 'Pending',  color: 'amber' },
-    { key: 'approved',         label: 'Approved', color: 'blue'  },
-    { key: 'all',              label: 'All',      color: 'gray'  },
+    { key: 'pending_approval', label: 'Pending'  },
+    { key: 'approved',         label: 'Approved' },
+    { key: 'all',              label: 'All'      },
   ];
 
-  const pendingCount = soaList.filter(s => s.status === 'pending_approval').length;
+  const tabCounts = {
+    pending_approval: pendingCount,
+    approved:         approvedCount,
+  };
+
+  const changeTab = (key) => {
+    setFilterStatus(key);
+    setPage(1);
+  };
+
+  // Pagination values
+  const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
+  const rangeStart = totalCount === 0 ? 0 : (page - 1) * pageSize + 1;
+  const rangeEnd   = Math.min(page * pageSize, totalCount);
 
   // ──────────────────────────────────────────────────────────────
   return (
@@ -427,25 +550,23 @@ export default function SOAApproval({ currentUser }) {
       {/* ── TOP BAR ── */}
       <div className="sticky top-0 z-10 flex items-center justify-between px-6 py-3.5 bg-white border-b border-gray-200">
         <div className="flex items-center gap-3">
-          <div className="flex items-center justify-center w-8 h-8 rounded-lg" style={{ background: '#e8f5ec' }}>
-            <FaFileInvoiceDollar size={14} style={{ color: '#1a5c2e' }} />
+          <div className="flex items-center justify-center w-8 h-8 bg-gray-100 rounded-lg">
+            <FaFileInvoiceDollar size={14} className="text-black" />
           </div>
           <div>
             <h1 className="text-base font-semibold text-gray-800">SOA Approval Queue</h1>
             <p className="text-xs text-gray-400 mt-0.5">Review and approve pending statements of account</p>
           </div>
-          {pendingCount > 0 && (
-            <span className="flex items-center justify-center w-5 h-5 text-[10px] font-bold text-white rounded-full" style={{ background: '#d97706' }}>
-              {pendingCount}
-            </span>
-          )}
         </div>
-        <button
-          onClick={fetchSOAs}
-          className="flex items-center gap-2 px-3 py-1.5 text-xs font-medium text-gray-600 border border-gray-200 rounded-md hover:bg-gray-50 transition"
-        >
-          Refresh
-        </button>
+       <button
+  onClick={fetchSOAs}
+  disabled={loading}
+  title="Refresh"
+  aria-label="Refresh"
+  className="flex items-center justify-center w-8 h-8 text-gray-500 transition border border-gray-200 rounded-md hover:bg-gray-50 hover:text-gray-700 disabled:opacity-50"
+>
+  <FaSyncAlt size={12} className={loading ? 'animate-spin' : ''} />
+</button>
       </div>
 
       {/* ── MESSAGE ── */}
@@ -463,24 +584,31 @@ export default function SOAApproval({ currentUser }) {
         <div className="flex items-center justify-between gap-4 mb-5">
           {/* Status tabs */}
           <div className="flex items-center gap-1 p-1 bg-white border border-gray-200 rounded-lg">
-            {statusTabs.map(tab => (
-              <button
-                key={tab.key}
-                onClick={() => setFilterStatus(tab.key)}
-                className={`px-3.5 py-1.5 text-xs font-medium rounded-md transition ${
-                  filterStatus === tab.key
-                    ? 'bg-gray-800 text-white shadow-sm'
-                    : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
-                }`}
-              >
-                {tab.label}
-                {tab.key === 'pending_approval' && pendingCount > 0 && (
-                  <span className={`ml-1.5 inline-flex items-center justify-center w-4 h-4 text-[9px] font-bold rounded-full ${filterStatus === tab.key ? 'bg-amber-400 text-white' : 'bg-amber-100 text-amber-700'}`}>
-                    {pendingCount}
-                  </span>
-                )}
-              </button>
-            ))}
+            {statusTabs.map(tab => {
+              const count = tabCounts[tab.key];
+              const active = filterStatus === tab.key;
+          const badgeCls = tab.key === 'approved'
+              ? (active ? 'bg-blue-500 text-white' : 'bg-blue-100 text-blue-700')
+              : (active ? 'bg-amber-400 text-white' : 'bg-amber-100 text-amber-700');
+              return (
+                <button
+                  key={tab.key}
+                  onClick={() => changeTab(tab.key)}
+                  className={`px-3.5 py-1.5 text-xs font-medium rounded-md transition ${
+                    active
+                      ? 'bg-gray-800 text-white shadow-sm'
+                      : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+                  }`}
+                >
+                  {tab.label}
+                  {count > 0 && (
+                    <span className={`ml-1.5 inline-flex items-center justify-center min-w-[16px] h-4 px-1 text-[9px] font-bold rounded-full ${badgeCls}`}>
+                      {count}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
           </div>
 
           {/* Search */}
@@ -488,8 +616,8 @@ export default function SOAApproval({ currentUser }) {
             <FaSearch className="absolute text-gray-300 -translate-y-1/2 left-3 top-1/2" size={11} />
             <input
               type="text"
-              value={search}
-              onChange={e => setSearch(e.target.value)}
+              value={searchInput}
+              onChange={e => setSearchInput(e.target.value)}
               placeholder="Search SOA number or client..."
               className="w-full py-2 pl-8 pr-3 text-sm border border-gray-200 rounded-lg focus:outline-none focus:border-green-400 focus:ring-1 focus:ring-green-100"
             />
@@ -503,12 +631,12 @@ export default function SOAApproval({ currentUser }) {
               <div className="w-8 h-8 border-2 border-green-500 rounded-full border-t-transparent animate-spin" />
               <p className="text-sm text-gray-400">Loading SOAs...</p>
             </div>
-          ) : filtered.length === 0 ? (
+          ) : soaList.length === 0 ? (
             <div className="flex flex-col items-center justify-center gap-2 py-20">
               <FaFileInvoiceDollar size={32} className="text-gray-200" />
               <p className="text-sm font-medium text-gray-400">No SOAs found</p>
               <p className="text-xs text-gray-300">
-                {filterStatus === 'pending_approval' ? 'No pending SOAs for approval.' : 'Try changing the filter.'}
+                {filterStatus === 'pending_approval' && !search ? 'No pending SOAs for approval.' : 'Try changing the filter or search.'}
               </p>
             </div>
           ) : (
@@ -525,9 +653,12 @@ export default function SOAApproval({ currentUser }) {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
-                {filtered.map(soa => {
+                {soaList.map(soa => {
                   const isActing = actionLoading[soa.id];
-                  const totalDue = (parseFloat(soa.total_due) || 0);
+                  const totalDue =
+                    (totalsMap[soa.id] || 0) -
+                    (parseFloat(soa.down_payment) || 0) -
+                    (parseFloat(soa.withholding_tax) || 0);
 
                   return (
                     <tr key={soa.id} className="transition hover:bg-gray-50/60 group">
@@ -546,7 +677,7 @@ export default function SOAApproval({ currentUser }) {
                       </td>
                       <td className="px-5 py-3.5 text-right">
                         <span className="font-mono text-sm font-semibold text-gray-800">
-                          ₱{fmt(soa.total_due ?? 0)}
+                          ₱{fmt(totalDue)}
                         </span>
                       </td>
                       <td className="px-5 py-3.5 text-center">
@@ -554,7 +685,6 @@ export default function SOAApproval({ currentUser }) {
                       </td>
                       <td className="px-5 py-3.5">
                         <div className="flex items-center justify-center gap-1.5">
-                          {/* Preview */}
                           <button
                             onClick={() => openPreview(soa)}
                             title="Preview SOA"
@@ -563,7 +693,6 @@ export default function SOAApproval({ currentUser }) {
                             <FaEye size={10} />
                           </button>
 
-                          {/* Approve & Email — only for pending */}
                           {soa.status === 'pending_approval' && isApprover && (
                             <>
                               <button
@@ -606,12 +735,67 @@ export default function SOAApproval({ currentUser }) {
           )}
         </div>
 
-        {/* Row count */}
-        {!loading && filtered.length > 0 && (
-          <p className="mt-3 text-xs text-gray-400">
-            Showing {filtered.length} {filtered.length === 1 ? 'record' : 'records'}
-            {filterStatus !== 'all' ? ` · filtered by ${filterStatus.replace('_', ' ')}` : ''}
-          </p>
+        {/* ── PAGINATION ── */}
+        {!loading && totalCount > 0 && (
+          <div className="flex flex-wrap items-center justify-between gap-3 mt-4">
+            <div className="flex items-center gap-3 text-xs text-gray-500">
+              <span>
+                Showing <span className="font-semibold text-gray-700">{rangeStart}–{rangeEnd}</span> of{' '}
+                <span className="font-semibold text-gray-700">{totalCount}</span>{' '}
+                {totalCount === 1 ? 'record' : 'records'}
+                {filterStatus !== 'all' ? ` · ${filterStatus.replace('_', ' ')}` : ''}
+              </span>
+              <div className="flex items-center gap-1.5">
+                <span>Rows:</span>
+                <select
+                  value={pageSize}
+                  onChange={(e) => { setPageSize(Number(e.target.value)); setPage(1); }}
+                  className="px-2 py-1 text-xs bg-white border border-gray-200 rounded-md focus:outline-none focus:border-green-400"
+                >
+                  {[10, 25, 50, 100].map((n) => (
+                    <option key={n} value={n}>{n}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                disabled={page === 1}
+                className="flex items-center justify-center w-8 h-8 text-gray-500 bg-white border border-gray-200 rounded-md hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                <FaChevronLeft size={10} />
+              </button>
+
+              {getPageNumbers(page, totalPages).map((p, i) =>
+                p === '...' ? (
+                  <span key={`dots-${i}`} className="px-1 text-xs text-gray-400">…</span>
+                ) : (
+                  <button
+                    key={p}
+                    onClick={() => setPage(p)}
+                    className={`min-w-[32px] h-8 px-2 text-xs font-medium rounded-md border transition ${
+                      p === page
+                        ? 'text-white border-transparent'
+                        : 'text-gray-600 bg-white border-gray-200 hover:bg-gray-50'
+                    }`}
+                    style={p === page ? { background: '#1a5c2e' } : undefined}
+                  >
+                    {p}
+                  </button>
+                )
+              )}
+
+              <button
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                disabled={page === totalPages}
+                className="flex items-center justify-center w-8 h-8 text-gray-500 bg-white border border-gray-200 rounded-md hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                <FaChevronRight size={10} />
+              </button>
+            </div>
+          </div>
         )}
       </div>
 
@@ -639,10 +823,10 @@ export default function SOAApproval({ currentUser }) {
                 <StatusBadge status={previewSOA.status} />
               </div>
               <div className="flex items-center gap-2">
-             {previewSOA.status === 'pending_approval' && isApprover && (
-  <>
-    <button
-      onClick={() => { handleApproveAndEmail(previewSOA); }}
+                {previewSOA.status === 'pending_approval' && isApprover && (
+                  <>
+                    <button
+                      onClick={() => { handleApproveAndEmail(previewSOA); }}
                       disabled={!!actionLoading[previewSOA.id]}
                       className="flex items-center gap-2 px-3.5 py-1.5 text-sm font-medium text-white rounded-md transition disabled:opacity-50"
                       style={{ background: '#1a5c2e' }}
@@ -682,6 +866,7 @@ export default function SOAApproval({ currentUser }) {
                 const downPayment     = parseFloat(previewSOA.down_payment) || 0;
                 const withholdingTax  = parseFloat(previewSOA.withholding_tax) || 0;
                 const totalDue        = subtotal - downPayment - withholdingTax;
+                const rowCount        = Math.max(15, items.length);
 
                 return (
                   <div className="soa-print-area mx-auto bg-white text-[11px]"
@@ -747,7 +932,7 @@ export default function SOAApproval({ currentUser }) {
                           </tr>
                         </thead>
                         <tbody>
-                          {Array.from({ length: 15 }).map((_, i) => {
+                          {Array.from({ length: rowCount }).map((_, i) => {
                             const item = items[i];
                             return (
                               <tr key={i} style={{ background: i % 2 === 0 ? '#fff' : '#f4faf6', borderBottom: '1px solid #e0ede5', height: 24 }}>
@@ -784,15 +969,31 @@ export default function SOAApproval({ currentUser }) {
                             <div style={{ fontWeight: 700, color: '#222', fontSize: 7.5 }}>FORTISERV BUSINESS MANAGEMENT ENTERPRISE CO.</div>
                           </div>
                         </div>
-                       <div className="flex items-center gap-2 rounded mb-1.5 p-1.5" style={{ background: '#fef2f2', overflow: 'hidden', maxHeight: 32 }}>
-  <img src="https://pxzaexutvuatdexgkavk.supabase.co/storage/v1/object/public/assets/chinabank.png"
-       style={{ height: 16, width: 'auto', maxWidth: 40, objectFit: 'contain', display: 'block' }} />
-                          <div><div style={{ fontSize: 8, color: '#333' }}>Bank: China Bank Corporation</div><div style={{ fontSize: 8, color: '#555' }}>Account Number: 1307000000077</div></div>
-                        </div>
+
+                        {/* China Bank */}
                         <div className="flex items-center gap-2 rounded mb-1.5 p-1.5" style={{ background: '#fef2f2', overflow: 'hidden', maxHeight: 32 }}>
-  <img src="https://pxzaexutvuatdexgkavk.supabase.co/storage/v1/object/public/assets/chinabank.png"
-       style={{ height: 16, width: 'auto', maxWidth: 40, objectFit: 'contain', display: 'block' }} />
-                          <div><div style={{ fontSize: 8, color: '#333' }}>Bank: Banco De Oro</div><div style={{ fontSize: 8, color: '#555' }}>Account Number: 004500601972</div></div>
+                          <img
+                            src="https://pxzaexutvuatdexgkavk.supabase.co/storage/v1/object/public/assets/chinabank.png"
+                            alt="China Bank"
+                            style={{ height: 16, width: 'auto', maxWidth: 40, objectFit: 'contain', display: 'block' }}
+                          />
+                          <div>
+                            <div style={{ fontSize: 8, color: '#333' }}>Bank: China Bank Corporation</div>
+                            <div style={{ fontSize: 8, color: '#555' }}>Account Number: 1307000000077</div>
+                          </div>
+                        </div>
+
+                        {/* BDO */}
+                        <div className="flex items-center gap-2 rounded p-1.5" style={{ background: '#eff4fb', overflow: 'hidden', maxHeight: 32 }}>
+                          <img
+                            src="https://pxzaexutvuatdexgkavk.supabase.co/storage/v1/object/public/assets/bdo_logo.jpg"
+                            alt="BDO"
+                            style={{ height: 16, width: 'auto', maxWidth: 40, objectFit: 'contain', display: 'block' }}
+                          />
+                          <div>
+                            <div style={{ fontSize: 8, color: '#333' }}>Bank: Banco De Oro</div>
+                            <div style={{ fontSize: 8, color: '#555' }}>Account Number: 004500601972</div>
+                          </div>
                         </div>
                       </div>
 
@@ -835,8 +1036,8 @@ export default function SOAApproval({ currentUser }) {
                       <div>
                         <div style={{ marginBottom: 4 }}>Prepared by:</div>
                         <div style={{ borderBottom: '1px solid #999', height: 32, marginBottom: 6 }} />
-                        <div style={{ color: '#333', fontWeight: 600 }}>{userFullName}</div>
-                        <div>Billing Officer</div>
+                       <div style={{ color: '#333', fontWeight: 600 }}>{previewSOA.created_by_name || '—'}</div>
+                      <div>Billing Officer</div>
                       </div>
                       <div>
                         <div style={{ marginBottom: 4 }}>Received By:</div>

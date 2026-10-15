@@ -1,33 +1,65 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
-  FaSearch, FaEye, FaTrashAlt, FaFilePdf, FaFileExcel,
-  FaFilter, FaTimes, FaChevronDown, FaChevronUp, FaBuilding,
-  FaUser, FaMapMarkerAlt, FaPhone, FaChevronLeft, FaChevronRight,
-  FaAngleDoubleLeft, FaAngleDoubleRight, FaSync
-} from 'react-icons/fa';
+  Search, Eye, Trash2, FileText, FileSpreadsheet, Filter, X,
+  ChevronLeft, ChevronRight,
+  ChevronsLeft, ChevronsRight, RefreshCw, Download, Check, AlertTriangle,
+  ArrowDownUp,
+} from 'lucide-react';
 import { supabase } from '../../lib/supabaseClient';
+
+/* ── Shared look (same as tax_type / business_registration / etc.) ── */
+const inputCls   = "w-full px-3 py-2 text-sm bg-white border border-gray-200 rounded-md focus:outline-none focus:border-gray-400 focus:ring-1 focus:ring-gray-200";
+const labelCls   = "block mb-1 text-xs font-medium text-gray-500";
+const btnPrimary = "flex items-center justify-center gap-2 px-3.5 py-2 text-sm font-medium text-white transition bg-gray-900 rounded-md hover:bg-black disabled:opacity-50";
+const btnGhost   = "flex items-center justify-center gap-2 px-3.5 py-2 text-sm font-medium text-gray-600 transition bg-white border border-gray-200 rounded-md hover:bg-gray-50 disabled:opacity-50";
+const iconBtn    = "p-1.5 text-gray-400 transition rounded-md hover:bg-gray-100 hover:text-black disabled:opacity-30 disabled:cursor-not-allowed";
+const thCls      = "px-5 py-3 text-xs font-medium text-left text-gray-500 whitespace-nowrap";
 
 // ─── CONSTANTS ────────────────────────────────────────────────────────────────
 const PAGE_SIZE_OPTIONS = [25, 50, 100];
 
 const SORT_OPTIONS = [
-  { value: 'client_id_desc',        label: 'Client ID (Newest)' },
-  { value: 'client_id_asc',         label: 'Client ID (Oldest)' },
-  { value: 'business_name_asc',     label: 'Business Name A→Z' },
-  { value: 'business_name_desc',    label: 'Business Name Z→A' },
-  { value: 'date_of_coverage_desc', label: 'Coverage (Newest)' },
-  { value: 'date_of_coverage_asc',  label: 'Coverage (Oldest)' },
-];
-
-const GROUP_OPTIONS = [
-  { value: 'none',                     label: 'No Grouping' },
-  { value: 'tax_payer_classification', label: 'Per Tax Classification' },
-  { value: 'tax_type',                 label: 'Per Tax Type' },
-  { value: 'line_of_business',         label: 'Per Line of Business' },
-  { value: 'business_registration',    label: 'Per Business Registration' },
+  { value: 'client_id_desc',          label: 'Client ID (Newest)' },
+  { value: 'client_id_asc',           label: 'Client ID (Oldest)' },
+  { value: 'business_name_asc',       label: 'Business Name A→Z' },
+  { value: 'business_name_desc',      label: 'Business Name Z→A' },
+  { value: 'date_of_coverage_desc',   label: 'Coverage (Newest)' },
+  { value: 'date_of_coverage_asc',    label: 'Coverage (Oldest)' },
+  { value: 'date_of_expiration_asc',  label: 'Contract Expiring' },
 ];
 
 const ACCOUNT_TABS = ['All', 'Summit', 'Horizon'];
+
+// A client counts as "New" if it was added within the last NEW_DAYS days.
+// Change this number to adjust what "New" means.
+const NEW_DAYS = 30;
+
+const AGE_TABS = [
+  { value: 'all',      label: 'All Clients' },
+  { value: 'new',      label: 'New' },
+  { value: 'existing', label: 'Existing' },
+];
+
+// Table headers — `key` makes the column sortable (click to toggle asc/desc)
+const TABLE_COLS = [
+  { key: null,                       label: '#' },
+  { key: 'client_id',                label: 'Client ID' },
+  { key: 'business_name',            label: 'Business Name' },
+  { key: 'account',                  label: 'Account' },
+  { key: 'tax_type',                 label: 'Tax Type' },
+  { key: 'tax_payer_classification', label: 'Classification' },
+  { key: 'tin',                      label: 'TIN' },
+  { key: 'contact_person',           label: 'Contact' },
+  { key: 'date_of_coverage',         label: 'Coverage' },
+  { key: 'approval_status',          label: 'Status' },
+  { key: null,                       label: '' },
+];
+
+const isNewClient = (c) =>
+  !!c.created_at && Date.now() - new Date(c.created_at).getTime() <= NEW_DAYS * 86400000;
+
+const getInitials = (name = '') =>
+  (name || '').split(/\s+/).filter(Boolean).slice(0, 2).map(n => n[0]).join('').toUpperCase() || '—';
 
 const ALL_COLS = [
   { key: 'client_id',                   label: 'Client ID',           default: true  },
@@ -45,7 +77,8 @@ const ALL_COLS = [
   { key: 'registered_business_address', label: 'Address',             default: false },
   { key: 'rdo',                         label: 'RDO',                 default: false },
   { key: 'date_of_coverage',            label: 'Date of Coverage',    default: true  },
-  { key: 'status',                      label: 'Status',              default: true  },
+  // NOTE: the real column in the DB is approval_status (was 'status' before, so exports came out blank)
+  { key: 'approval_status',             label: 'Status',              default: true  },
 ];
 
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
@@ -61,34 +94,21 @@ function sortClients(arr, val) {
   return [...arr].sort((a, b) => {
     const av = (a[field] || '').toString();
     const bv = (b[field] || '').toString();
+    // Blank values always go to the bottom, whichever direction you sort
+    if (!av && !bv) return 0;
+    if (!av) return 1;
+    if (!bv) return -1;
     const cmp = av.localeCompare(bv, undefined, { numeric: field === 'client_id' });
     return dir === 'asc' ? cmp : -cmp;
   });
 }
 
-function groupClients(arr, by) {
-  if (by === 'none') return [{ label: null, rows: arr }];
-  const map = {};
-  arr.forEach(c => {
-    const k = c[by] || '(Unspecified)';
-    if (!map[k]) map[k] = [];
-    map[k].push(c);
-  });
-  return Object.entries(map)
-    .sort((a, b) => a[0].localeCompare(b[0]))
-    .map(([label, rows]) => ({ label, rows }));
-}
-
+// Minimal badges: dark = approved, gray = pending / other, red text = inactive
 const statusColor = s => ({
-  approved: 'bg-emerald-100 text-emerald-700',
-  pending:  'bg-amber-100 text-amber-700',
-  inactive: 'bg-red-100 text-red-600',
-}[s] || 'bg-slate-100 text-slate-500');
-
-const accountColor = a => ({
-  Summit:  'bg-teal-100 text-teal-700',
-  Horizon: 'bg-emerald-100 text-emerald-700',
-}[a] || 'bg-slate-100 text-slate-500');
+  approved: 'bg-gray-900 text-white',
+  pending:  'bg-gray-100 text-gray-600',
+  inactive: 'bg-red-50 text-red-600',
+}[s] || 'bg-gray-100 text-gray-500');
 
 // ─── FETCH ALL (bypass Supabase 1000-row limit) ───────────────────────────────
 async function fetchAllClients() {
@@ -163,7 +183,7 @@ function exportExcel(groups, cols, filterDesc) {
   XLSX.writeFile(wb, `fortiserv_client_masterlist_${new Date().toISOString().split('T')[0]}.xlsx`);
 }
 
-function exportPDF(groups, cols, filterDesc, sortLabel, groupLabel) {
+function exportPDF(groups, cols, filterDesc) {
   const jsPDFLib = window.jspdf;
   if (!jsPDFLib || !jsPDFLib.jsPDF) {
     alert('jsPDF not loaded yet, please wait a moment and try again.');
@@ -391,26 +411,203 @@ function exportPDF(groups, cols, filterDesc, sortLabel, groupLabel) {
   }
 }
 
-
 // ─── UI COMPONENTS ────────────────────────────────────────────────────────────
-const Section = ({ icon: Icon, title, children }) => (
-  <div className="mb-6">
-    <div className="flex items-center gap-2 pb-2 mb-3 border-b border-slate-100">
-      <div className="flex items-center justify-center w-6 h-6 rounded-md bg-teal-50 shrink-0">
-        <Icon size={11} className="text-teal-700" />
-      </div>
-      <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">{title}</span>
+const Toast = ({ msg, type }) =>
+  msg ? (
+    <div
+      className={`fixed z-50 flex items-center gap-2 px-4 py-2.5 text-sm font-medium bg-white border rounded-md shadow-lg bottom-6 right-6 ${
+        type === 'error' ? 'text-red-700 border-red-200' : 'text-gray-800 border-gray-200'
+      }`}
+    >
+      {type === 'error' ? <AlertTriangle size={14} /> : <Check size={14} />}
+      {msg}
     </div>
+  ) : null;
+
+const Modal = ({ title, subtitle, onClose, wide, children }) => (
+  <div
+    className="fixed inset-0 z-40 flex items-center justify-center p-4 bg-black/40"
+    onClick={(e) => e.target === e.currentTarget && onClose()}
+  >
+    <div
+      className={`w-full ${wide ? 'max-w-2xl' : 'max-w-md'} max-h-[90vh] flex flex-col bg-white border border-gray-200 rounded-lg shadow-xl`}
+    >
+      <div className="flex items-start justify-between px-6 pt-5 shrink-0">
+        <div className="min-w-0">
+          <h2 className="text-base font-semibold text-gray-800 truncate">{title}</h2>
+          {subtitle && <p className="mt-0.5 text-xs text-gray-500">{subtitle}</p>}
+        </div>
+        <button type="button" onClick={onClose} className={iconBtn}>
+          <X size={16} />
+        </button>
+      </div>
+      {children}
+    </div>
+  </div>
+);
+
+const Section = ({ title, children }) => (
+  <div className="mb-6">
+    <p className="pb-1 mb-3 text-xs font-semibold text-gray-800 border-b border-gray-200">{title}</p>
     <div className="grid grid-cols-2 gap-x-8 gap-y-3">{children}</div>
   </div>
 );
 
 const DField = ({ label, value, mono, span2 }) => value ? (
   <div className={span2 ? 'col-span-2' : ''}>
-    <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-0.5">{label}</p>
-    <p className={`text-sm text-slate-800 font-medium break-words ${mono ? 'font-mono' : ''}`}>{value}</p>
+    <p className="mb-0.5 text-xs text-gray-500">{label}</p>
+    <p className={`text-sm text-gray-800 break-words ${mono ? 'font-mono' : ''}`}>{value}</p>
   </div>
 ) : null;
+
+// ─── HOVER SEARCH ─────────────────────────────────────────────────────────────
+// Icon only. Hover it and the input slides out. Stays open while you're typing
+// (focused) or while there's still text in the search box.
+function HoverSearch({ value, onChange }) {
+  const [hover, setHover] = useState(false);
+  const [focus, setFocus] = useState(false);
+  const open = hover || focus || !!value;
+
+  return (
+    <div
+      className="flex items-center"
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+    >
+      <button type="button" title="Search" className={`${btnGhost} !px-2.5`}>
+        <Search size={15} />
+      </button>
+      <div
+        className={`relative overflow-hidden transition-all duration-200 ${
+          open ? 'w-64 ml-2 opacity-100' : 'w-0 ml-0 opacity-0'
+        }`}
+      >
+        <input
+          type="text"
+          value={value}
+          onChange={e => onChange(e.target.value)}
+          onFocus={() => setFocus(true)}
+          onBlur={() => setFocus(false)}
+          placeholder="Search name, ID, TIN, email..."
+          className={`${inputCls} pr-8`}
+        />
+        {value && (
+          <button
+            type="button"
+            onClick={() => onChange('')}
+            className="absolute text-gray-400 -translate-y-1/2 right-3 top-1/2 hover:text-black"
+          >
+            <X size={13} />
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── HOVER SORT (icon only → "Arrange by" menu fades in on hover) ────────────
+function HoverSort({ value, onChange, options }) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <div
+      className="relative"
+      onMouseEnter={() => setOpen(true)}
+      onMouseLeave={() => setOpen(false)}
+    >
+      <button
+        type="button"
+        title="Arrange by"
+        onClick={() => setOpen(true)} // tap works on touch screens too
+        className={`${btnGhost} !px-2.5 ${open ? '!bg-gray-50 !text-gray-900' : ''}`}
+      >
+        <ArrowDownUp size={15} />
+      </button>
+
+      {/* Always mounted so it can fade/slide smoothly. pt-1 (not margin) = no hover gap */}
+      <div
+        className={`absolute left-0 z-30 w-56 pt-1 top-full transition-all duration-200 ease-out ${
+          open ? 'opacity-100 visible translate-y-0' : 'opacity-0 invisible -translate-y-1'
+        }`}
+      >
+        <div className="py-1 bg-white border border-gray-200 rounded-md shadow-lg">
+          <p className="px-3.5 pt-1.5 pb-1 text-xs text-gray-400">Arrange by</p>
+          {options.map(o => (
+            <button
+              key={o.value}
+              type="button"
+              onClick={() => { onChange(o.value); setOpen(false); }}
+              className={`flex items-center justify-between w-full px-3.5 py-2 text-sm text-left transition hover:bg-gray-50 ${
+                value === o.value ? 'font-medium text-gray-900' : 'text-gray-500'
+              }`}
+            >
+              {o.label}
+              {value === o.value && <Check size={13} />}
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── HOVER FILTER (icon only → filter panel fades in on hover) ───────────────
+// Stays open while any dropdown inside it is focused, so picking an option
+// doesn't make the panel disappear.
+function HoverFilter({ filters, activeCount, onClear }) {
+  const [hover, setHover] = useState(false);
+  const [focus, setFocus] = useState(false);
+  const open = hover || focus;
+
+  return (
+    <div
+      className="relative"
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      onFocus={() => setFocus(true)}
+      onBlur={e => { if (!e.currentTarget.contains(e.relatedTarget)) setFocus(false); }}
+    >
+      <button
+        type="button"
+        title="Filters"
+        className={`${btnGhost} relative !px-2.5 ${open ? '!bg-gray-50 !text-gray-900' : ''}`}
+      >
+        <Filter size={15} />
+        {activeCount > 0 && (
+          <span className="absolute flex items-center justify-center w-4 h-4 text-[10px] font-medium text-white bg-gray-900 rounded-full -top-1.5 -right-1.5">
+            {activeCount}
+          </span>
+        )}
+      </button>
+
+      <div
+        className={`absolute left-0 z-30 w-[min(92vw,560px)] pt-1 top-full transition-all duration-200 ease-out ${
+          open ? 'opacity-100 visible translate-y-0' : 'opacity-0 invisible -translate-y-1'
+        }`}
+      >
+        <div className="p-4 bg-white border border-gray-200 rounded-lg shadow-lg">
+          <div className="grid grid-cols-2 gap-3">
+            {filters.map(f => (
+              <div key={f.label}>
+                <label className={labelCls}>{f.label}</label>
+                <select value={f.val} onChange={e => f.set(e.target.value)} className={inputCls}>
+                  {f.opts.map(o => <option key={o} value={o}>{o === 'all' ? 'All' : o}</option>)}
+                </select>
+              </div>
+            ))}
+          </div>
+          {activeCount > 0 && (
+            <div className="flex justify-end mt-3">
+              <button type="button" onClick={onClear} className="text-xs font-medium text-gray-500 hover:text-black">
+                Clear filters
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 // ─── PAGINATION COMPONENT ─────────────────────────────────────────────────────
 function Pagination({ currentPage, totalPages, onPageChange, pageSize, onPageSizeChange, totalRecords }) {
@@ -423,59 +620,55 @@ function Pagination({ currentPage, totalPages, onPageChange, pageSize, onPageSiz
     pages.push(i);
   }
 
+  const pageBtn = (active) =>
+    `w-8 h-8 text-xs rounded-md transition ${
+      active ? 'bg-gray-900 text-white font-medium' : 'text-gray-600 hover:bg-gray-100'
+    }`;
+
   return (
-    <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 bg-white border-t border-slate-200">
-      <div className="flex items-center gap-3 text-sm text-slate-500">
-        <span>Rows per page:</span>
+    <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-3 border-t border-gray-100 bg-gray-50">
+      <div className="flex items-center gap-3 text-xs text-gray-500">
+        <span>Rows per page</span>
         <select value={pageSize} onChange={e => { onPageSizeChange(Number(e.target.value)); onPageChange(1); }}
-          className="px-2 py-1 text-xs bg-white border rounded-lg cursor-pointer border-slate-200 focus:outline-none focus:border-teal-400">
+          className="px-2 py-1 text-xs bg-white border border-gray-200 rounded-md cursor-pointer focus:outline-none focus:border-gray-400">
           {PAGE_SIZE_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
         </select>
-        <span className="text-xs">{from}–{to} of {totalRecords}</span>
+        <span>{from}–{to} of {totalRecords}</span>
       </div>
 
       <div className="flex items-center gap-1">
-        <button onClick={() => onPageChange(1)} disabled={currentPage === 1}
-          className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed transition">
-          <FaAngleDoubleLeft size={11} />
+        <button onClick={() => onPageChange(1)} disabled={currentPage === 1} className={iconBtn}>
+          <ChevronsLeft size={14} />
         </button>
-        <button onClick={() => onPageChange(currentPage - 1)} disabled={currentPage === 1}
-          className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed transition">
-          <FaChevronLeft size={11} />
+        <button onClick={() => onPageChange(currentPage - 1)} disabled={currentPage === 1} className={iconBtn}>
+          <ChevronLeft size={14} />
         </button>
 
         {pages[0] > 1 && (
           <>
-            <button onClick={() => onPageChange(1)} className="w-8 h-8 text-xs transition rounded-lg text-slate-600 hover:bg-slate-100">1</button>
-            {pages[0] > 2 && <span className="px-1 text-xs text-slate-300">…</span>}
+            <button onClick={() => onPageChange(1)} className={pageBtn(false)}>1</button>
+            {pages[0] > 2 && <span className="px-1 text-xs text-gray-300">…</span>}
           </>
         )}
 
         {pages.map(p => (
-          <button key={p} onClick={() => onPageChange(p)}
-            className={`w-8 h-8 text-xs rounded-lg font-medium transition ${
-              p === currentPage
-                ? 'bg-teal-700 text-white shadow-sm'
-                : 'text-slate-600 hover:bg-slate-100'
-            }`}>
+          <button key={p} onClick={() => onPageChange(p)} className={pageBtn(p === currentPage)}>
             {p}
           </button>
         ))}
 
         {pages[pages.length - 1] < totalPages && (
           <>
-            {pages[pages.length - 1] < totalPages - 1 && <span className="px-1 text-xs text-slate-300">…</span>}
-            <button onClick={() => onPageChange(totalPages)} className="w-8 h-8 text-xs transition rounded-lg text-slate-600 hover:bg-slate-100">{totalPages}</button>
+            {pages[pages.length - 1] < totalPages - 1 && <span className="px-1 text-xs text-gray-300">…</span>}
+            <button onClick={() => onPageChange(totalPages)} className={pageBtn(false)}>{totalPages}</button>
           </>
         )}
 
-        <button onClick={() => onPageChange(currentPage + 1)} disabled={currentPage === totalPages || totalPages === 0}
-          className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed transition">
-          <FaChevronRight size={11} />
+        <button onClick={() => onPageChange(currentPage + 1)} disabled={currentPage === totalPages || totalPages === 0} className={iconBtn}>
+          <ChevronRight size={14} />
         </button>
-        <button onClick={() => onPageChange(totalPages)} disabled={currentPage === totalPages || totalPages === 0}
-          className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed transition">
-          <FaAngleDoubleRight size={11} />
+        <button onClick={() => onPageChange(totalPages)} disabled={currentPage === totalPages || totalPages === 0} className={iconBtn}>
+          <ChevronsRight size={14} />
         </button>
       </div>
     </div>
@@ -494,18 +687,24 @@ export default function ClientProfileList() {
   const [filterLOB, setFilterLOB]           = useState('all');
   const [filterStatus, setFilterStatus]     = useState('all');
   const [sortVal, setSortVal]       = useState('client_id_desc');
-  const [groupBy, setGroupBy]       = useState('none');
+  const [ageTab, setAgeTab]         = useState('all');
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize]     = useState(50);
   const [selectedClient, setSelectedClient] = useState(null);
   const [message, setMessage]       = useState('');
   const [messageType, setMessageType] = useState('');
-  const [showFilters, setShowFilters] = useState(false);
   const [showExport, setShowExport] = useState(false);
   const [libsLoaded, setLibsLoaded] = useState(false);
   const [exportCols, setExportCols] = useState(
     ALL_COLS.reduce((acc, c) => ({ ...acc, [c.key]: c.default }), {})
   );
+
+  // Auto-hide toast
+  useEffect(() => {
+    if (!message) return;
+    const t = setTimeout(() => setMessage(''), 3500);
+    return () => clearTimeout(t);
+  }, [message]);
 
   // Load export libraries (SheetJS + jsPDF only — no autoTable)
   useEffect(() => {
@@ -542,24 +741,31 @@ export default function ClientProfileList() {
   useEffect(() => { fetchClients(); }, [fetchClients]);
 
   // Reset to page 1 when filters/sort change
-  useEffect(() => { setCurrentPage(1); }, [searchTerm, filterAccount, filterTaxType, filterTaxClass, filterLOB, filterStatus, sortVal, groupBy]);
+  useEffect(() => { setCurrentPage(1); }, [searchTerm, filterAccount, filterTaxType, filterTaxClass, filterLOB, filterStatus, ageTab, sortVal]);
 
   const handleDelete = async (id) => {
     if (!window.confirm('Deactivate this client?')) return;
     try {
       const { error } = await supabase.from('client_profile').update({ approval_status: 'inactive' }).eq('id', id);
       if (error) throw error;
-      setMessage('✅ Client deactivated'); setMessageType('success');
+      setMessage('Client deactivated.'); setMessageType('success');
       fetchClients(); setSelectedClient(null);
-    } catch (err) { setMessage(`❌ ${err.message}`); setMessageType('error'); }
+    } catch (err) { setMessage(err.message); setMessageType('error'); }
   };
 
   // Unique dropdown values from all loaded clients
   const uniq = field => ['all', ...new Set(clients.map(c => c[field]).filter(Boolean))];
 
+  // Tab counts follow the Account filter so they match what each tab will show
+  const baseClients = clients.filter(c => filterAccount === 'All' || c.account === filterAccount);
+  const newCount    = baseClients.filter(isNewClient).length;
+  const tabCounts   = { all: baseClients.length, new: newCount, existing: baseClients.length - newCount };
+
   // Filter all clients
   const filtered = clients.filter(c => {
     if (filterAccount !== 'All' && c.account !== filterAccount) return false;
+    if (ageTab === 'new' && !isNewClient(c)) return false;
+    if (ageTab === 'existing' && isNewClient(c)) return false;
     if (filterTaxType !== 'all' && c.tax_type !== filterTaxType) return false;
     if (filterTaxClass !== 'all' && c.tax_payer_classification !== filterTaxClass) return false;
     if (filterLOB !== 'all' && c.line_of_business !== filterLOB) return false;
@@ -575,8 +781,7 @@ export default function ClientProfileList() {
   const sorted      = sortClients(filtered, sortVal);
   const totalPages  = Math.max(1, Math.ceil(sorted.length / pageSize));
   const paginated   = sorted.slice((currentPage - 1) * pageSize, currentPage * pageSize);
-  const groups      = groupClients(paginated, groupBy);        // groups for display (paginated)
-  const allGroups   = groupClients(sorted, groupBy);           // groups for export (all records)
+  const allGroups   = [{ label: null, rows: sorted }];          // export (all records)
   const activeCols  = ALL_COLS.filter(c => exportCols[c.key]);
 
   const filterDesc = [
@@ -588,390 +793,310 @@ export default function ClientProfileList() {
     searchTerm ? `"${searchTerm}"` : '',
   ].filter(Boolean).join(' · ') || 'All Clients';
 
-  const sortLabel  = SORT_OPTIONS.find(s => s.value === sortVal)?.label || '';
-  const groupLabel = GROUP_OPTIONS.find(g => g.value === groupBy)?.label || '';
   const activeFilterCount = [filterTaxType, filterTaxClass, filterLOB, filterStatus].filter(v => v !== 'all').length;
 
+  const filterDefs = [
+    { label: 'Tax Type',         val: filterTaxType,  set: setFilterTaxType,  opts: uniq('tax_type') },
+    { label: 'Classification',   val: filterTaxClass, set: setFilterTaxClass, opts: uniq('tax_payer_classification') },
+    { label: 'Line of Business', val: filterLOB,      set: setFilterLOB,      opts: uniq('line_of_business') },
+    { label: 'Status',           val: filterStatus,   set: setFilterStatus,   opts: uniq('approval_status') },
+  ];
+  const clearFilters = () => {
+    setFilterTaxType('all'); setFilterTaxClass('all'); setFilterLOB('all'); setFilterStatus('all');
+  };
+
   if (loading) return (
-    <div className="flex items-center justify-center min-h-screen bg-slate-50">
-      <div className="text-center">
-        <div className="w-10 h-10 mx-auto mb-3 border-2 border-teal-700 rounded-full border-t-transparent animate-spin" />
-        <p className="text-sm text-slate-500">Loading all client records...</p>
-      </div>
+    <div className="flex items-center justify-center gap-2 py-24 text-sm text-gray-400">
+      <RefreshCw size={14} className="animate-spin" /> Loading all client records...
     </div>
   );
 
   return (
-    <div className="min-h-screen bg-slate-50">
+    <div className="px-6 py-6 mx-auto max-w-screen-2xl">
+      <Toast msg={message} type={messageType} />
 
-      {/* ── TOP BAR ── */}
-      <div className="sticky top-0 z-20 bg-white border-b shadow-sm border-slate-200">
-        <div className="flex items-center justify-between max-w-screen-xl gap-4 px-6 py-3 mx-auto">
-          <div>
-            <h1 className="text-base font-bold leading-tight text-slate-900">Client Masterlist</h1>
-            <p className="text-xs text-slate-400">
-              {filtered.length} of {clients.length} records · {filterDesc}
-              {fetching && <span className="ml-2 text-teal-500">⟳ refreshing...</span>}
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            <button onClick={fetchClients} disabled={fetching}
-              className="p-2 transition rounded-lg text-slate-400 hover:text-teal-700 hover:bg-teal-50 disabled:opacity-40" title="Refresh">
-              <FaSync size={12} className={fetching ? 'animate-spin' : ''} />
-            </button>
-            <button onClick={() => setShowExport(true)}
-              className="flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white transition rounded-lg shadow bg-gradient-to-r from-teal-700 to-emerald-600 hover:opacity-90 shadow-teal-400/30">
-              Export ↓
-            </button>
-          </div>
+      {/* ── HEADER ── */}
+      <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
+        <div>
+          <h2 className="text-lg font-semibold text-gray-800">Client Masterlist</h2>
+          <p className="text-xs text-gray-500">
+            {filtered.length} of {clients.length} records · {filterDesc}
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <button onClick={fetchClients} disabled={fetching} title="Refresh" className={iconBtn}>
+            <RefreshCw size={15} className={fetching ? 'animate-spin' : ''} />
+          </button>
+          <button onClick={() => setShowExport(true)} className={btnPrimary}>
+            <Download size={14} /> Export
+          </button>
         </div>
       </div>
 
-      <div className="max-w-screen-xl px-6 py-5 mx-auto space-y-4">
+      {/* ── CLIENT TABS: All / New / Existing ── */}
+      <div className="flex items-center gap-6 mb-5 border-b border-gray-200">
+        {AGE_TABS.map(t => (
+          <button
+            key={t.value}
+            type="button"
+            onClick={() => setAgeTab(t.value)}
+            className={`flex items-center gap-2 pb-3 -mb-px text-sm font-medium border-b-2 transition ${
+              ageTab === t.value
+                ? 'text-gray-900 border-gray-900'
+                : 'text-gray-500 border-transparent hover:text-gray-800'
+            }`}
+          >
+            {t.label}
+            <span className={`px-1.5 text-xs rounded ${
+              ageTab === t.value ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-500'
+            }`}>
+              {tabCounts[t.value]}
+            </span>
+          </button>
+        ))}
+      </div>
 
-        {/* ── MESSAGE ── */}
-        {message && (
-          <div className={`flex items-center justify-between p-3 rounded-lg text-sm border-l-4 ${
-            messageType === 'success' ? 'bg-emerald-50 border-emerald-400 text-emerald-700' : 'bg-red-50 border-red-400 text-red-700'
-          }`}>
-            {message}
-            <button onClick={() => setMessage('')}><FaTimes size={11} /></button>
+      {/* ── TOOLBAR: search · arrange by · filters (icons, reveal on hover) · account ── */}
+      <div className="flex flex-wrap items-center gap-3 mb-5">
+        <HoverSearch value={searchTerm} onChange={setSearchTerm} />
+        <HoverSort value={sortVal} onChange={setSortVal} options={SORT_OPTIONS} />
+        <HoverFilter filters={filterDefs} activeCount={activeFilterCount} onClear={clearFilters} />
+        <select value={filterAccount} onChange={e => setFilterAccount(e.target.value)} className={`${inputCls} !w-auto`}>
+          {ACCOUNT_TABS.map(a => <option key={a} value={a}>{a === 'All' ? 'All Accounts' : a}</option>)}
+        </select>
+      </div>
+
+      {/* ── TABLE ── */}
+      <div className="overflow-hidden bg-white border border-gray-200 rounded-lg">
+        {paginated.length === 0 ? (
+          <div className="py-12 text-center text-gray-400">
+            {searchTerm || activeFilterCount > 0 || filterAccount !== 'All' || ageTab !== 'all'
+              ? 'No clients match your search.'
+              : 'No clients found.'}
           </div>
-        )}
-
-        {/* ── STATS ── */}
-        <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
-          {[
-            { label: 'Total',    val: clients.length, cls: 'text-slate-800' },
-            { label: 'Approved', val: clients.filter(c => c.approval_status === 'approved').length, cls: 'text-emerald-600' },
-            { label: 'Pending',  val: clients.filter(c => c.approval_status === 'pending').length,  cls: 'text-amber-600' },
-            { label: 'Summit',   val: clients.filter(c => c.account === 'Summit').length,  cls: 'text-teal-700' },
-            { label: 'Horizon',  val: clients.filter(c => c.account === 'Horizon').length, cls: 'text-emerald-600' },
-          ].map(s => (
-            <div key={s.label} className="px-4 py-3 bg-white border rounded-xl border-slate-200">
-              <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide">{s.label}</p>
-              <p className={`text-2xl font-bold mt-0.5 ${s.cls}`}>{s.val}</p>
-            </div>
-          ))}
-        </div>
-
-        {/* ── SEARCH / SORT / FILTERS ── */}
-        <div className="p-4 space-y-3 bg-white border rounded-xl border-slate-200">
-
-          {/* ACCOUNT TABS */}
-          <div className="flex items-center gap-1 p-1 rounded-lg bg-slate-100 w-fit">
-            {ACCOUNT_TABS.map(tab => (
-              <button
-                key={tab}
-                type="button"
-                onClick={() => setFilterAccount(tab)}
-                className={`px-4 py-1.5 text-sm font-semibold rounded-md transition-all ${
-                  filterAccount === tab
-                    ? tab === 'Summit'
-                      ? 'bg-teal-700 text-white shadow-sm'
-                      : tab === 'Horizon'
-                        ? 'bg-emerald-600 text-white shadow-sm'
-                        : 'bg-white text-slate-800 shadow-sm'
-                    : 'text-slate-500 hover:text-slate-700'
-                }`}
-              >
-                {tab}
-                {tab !== 'All' && (
-                  <span className={`ml-1.5 text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
-                    filterAccount === tab ? 'bg-white/20 text-white' : 'bg-slate-200 text-slate-500'
-                  }`}>
-                    {clients.filter(c => c.account === tab).length}
-                  </span>
-                )}
-              </button>
-            ))}
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="relative flex-1 min-w-52">
-              <FaSearch className="absolute -translate-y-1/2 left-3 top-1/2 text-slate-400" size={12} />
-              <input type="text" value={searchTerm} onChange={e => setSearchTerm(e.target.value)}
-                placeholder="Search name, ID, TIN, email, contact..."
-                className="w-full py-2 pr-4 text-sm border rounded-lg pl-9 border-slate-200 focus:border-teal-400 focus:outline-none focus:ring-2 focus:ring-teal-50" />
-              {searchTerm && (
-                <button onClick={() => setSearchTerm('')} className="absolute -translate-y-1/2 right-3 top-1/2 text-slate-400 hover:text-slate-600">
-                  <FaTimes size={11} />
-                </button>
-              )}
-            </div>
-            <select value={sortVal} onChange={e => setSortVal(e.target.value)}
-              className="px-3 py-2 text-sm bg-white border rounded-lg cursor-pointer border-slate-200 text-slate-700 focus:border-teal-400 focus:outline-none">
-              {SORT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-            </select>
-            <select value={groupBy} onChange={e => setGroupBy(e.target.value)}
-              className="px-3 py-2 text-sm bg-white border rounded-lg cursor-pointer border-slate-200 text-slate-700 focus:border-teal-400 focus:outline-none">
-              {GROUP_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-            </select>
-            <button onClick={() => setShowFilters(f => !f)}
-              className={`flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-lg border transition ${
-                activeFilterCount > 0 ? 'border-teal-400 bg-teal-50 text-teal-700' : 'border-slate-200 text-slate-600 hover:border-slate-300'
-              }`}>
-              <FaFilter size={11} /> Filters
-              {activeFilterCount > 0 && (
-                <span className="w-4 h-4 text-[10px] font-bold bg-teal-600 text-white rounded-full flex items-center justify-center">{activeFilterCount}</span>
-              )}
-              {showFilters ? <FaChevronUp size={9} /> : <FaChevronDown size={9} />}
-            </button>
-          </div>
-
-          {showFilters && (
-            <div className="grid grid-cols-2 gap-3 pt-3 border-t md:grid-cols-5 border-slate-100">
-              {[
-                { label: 'Tax Type',         val: filterTaxType,  set: setFilterTaxType,  opts: uniq('tax_type') },
-                { label: 'Classification',   val: filterTaxClass, set: setFilterTaxClass, opts: uniq('tax_payer_classification') },
-                { label: 'Line of Business', val: filterLOB,      set: setFilterLOB,      opts: uniq('line_of_business') },
-                { label: 'Status',           val: filterStatus,   set: setFilterStatus,   opts: uniq('approval_status') },
-              ].map(f => (
-                <div key={f.label}>
-                  <label className="text-[10px] font-semibold uppercase tracking-wide text-slate-400 block mb-1">{f.label}</label>
-                  <select value={f.val} onChange={e => f.set(e.target.value)}
-                    className="w-full px-2 py-1.5 text-xs border border-slate-200 rounded-lg bg-white focus:border-teal-400 focus:outline-none cursor-pointer">
-                    {f.opts.map(o => <option key={o} value={o}>{o === 'all' ? 'All' : o}</option>)}
-                  </select>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* ── TABLE ── */}
-        <div className="overflow-hidden bg-white border rounded-xl border-slate-200">
-          {paginated.length === 0 ? (
-            <div className="py-20 text-center">
-              <FaSearch size={28} className="mx-auto mb-3 text-slate-200" />
-              <p className="font-semibold text-slate-400">No clients found</p>
-              <p className="mt-1 text-xs text-slate-300">Try adjusting your filters or search</p>
-            </div>
-          ) : (
-            <>
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-slate-200 bg-slate-50/80">
-                      {['#','Client ID','Business Name','Account','Tax Type','Classification','TIN','Contact Person','Coverage','Status',''].map(h => (
-                        <th key={h} className="px-4 py-3 text-left text-[10px] font-bold uppercase tracking-wider text-slate-400 whitespace-nowrap">{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {groups.map(({ label, rows }, gi) => (
-                      <React.Fragment key={gi}>
-                        {label && (
-                          <tr>
-                            <td colSpan={11} className="px-4 py-2 border-teal-100 bg-teal-50/60 border-y">
-                              <span className="text-xs font-bold text-teal-700">{label}</span>
-                              <span className="ml-2 text-xs text-teal-400">({rows.length} on this page)</span>
-                            </td>
-                          </tr>
-                        )}
-                        {rows.map((c, idx) => {
-                          const globalIdx = (currentPage - 1) * pageSize + (
-                            gi === 0 ? idx : groups.slice(0, gi).reduce((s, g) => s + g.rows.length, 0) + idx
-                          );
-                          return (
-                            <tr key={c.id} className="transition-colors border-b border-slate-100 hover:bg-teal-50/30 group">
-                              <td className="px-4 py-3 text-xs text-slate-300 tabular-nums">{globalIdx + 1}</td>
-                              <td className="px-4 py-3">
-                                <span className="font-mono text-xs bg-slate-100 text-slate-500 px-2 py-0.5 rounded">{c.client_id}</span>
-                              </td>
-                              <td className="px-4 py-3 min-w-[160px]">
-                                <p className="font-semibold leading-snug text-slate-800">{c.business_name || '—'}</p>
-                                {c.trade_name && <p className="text-xs text-slate-400 mt-0.5 italic">{c.trade_name}</p>}
-                              </td>
-                              <td className="px-4 py-3 whitespace-nowrap">
-                                <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${accountColor(c.account)}`}>{c.account || '—'}</span>
-                              </td>
-                              <td className="px-4 py-3 text-xs text-slate-600 whitespace-nowrap">{c.tax_type || '—'}</td>
-                              <td className="px-4 py-3 text-xs text-slate-600 max-w-[150px]">
-                                <span title={c.tax_payer_classification} className="block truncate">{c.tax_payer_classification || '—'}</span>
-                              </td>
-                              <td className="px-4 py-3 font-mono text-xs text-slate-600 whitespace-nowrap">{c.tin || '—'}</td>
-                              <td className="px-4 py-3 text-xs text-slate-600 whitespace-nowrap">{c.contact_person || '—'}</td>
-                              <td className="px-4 py-3 text-xs text-slate-500 whitespace-nowrap">{fmtDate(c.date_of_coverage)}</td>
-                              <td className="px-4 py-3 whitespace-nowrap">
-                                <span className={`text-xs font-semibold px-2.5 py-1 rounded-full capitalize ${statusColor(c.approval_status)}`}>{c.approval_status || 'N/A'}</span>
-                              </td>
-                              <td className="px-4 py-3">
-                                <div className="flex items-center gap-1 transition-opacity opacity-0 group-hover:opacity-100">
-                                  <button onClick={() => setSelectedClient(c)}
-                                    className="p-1.5 text-teal-600 hover:bg-teal-100 rounded-lg transition" title="View">
-                                    <FaEye size={13} />
-                                  </button>
-                                  <button onClick={() => handleDelete(c.id)}
-                                    className="p-1.5 text-red-400 hover:bg-red-100 rounded-lg transition" title="Deactivate">
-                                    <FaTrashAlt size={12} />
-                                  </button>
-                                </div>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </React.Fragment>
+        ) : (
+          <>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="border-b border-gray-100 bg-gray-50">
+                  <tr>
+                    {TABLE_COLS.map((col, i) => (
+                      <th key={i} className={thCls}>{col.label}</th>
                     ))}
-                  </tbody>
-                </table>
-              </div>
+                  </tr>
+                </thead>
+                <tbody>
+                  {paginated.map((c, idx) => {
+                    const globalIdx = (currentPage - 1) * pageSize + idx;
+                    return (
+                      <tr key={c.id} className="border-t border-gray-100 group hover:bg-gray-50">
+                        <td className="px-5 py-4 text-xs text-gray-300 tabular-nums">{globalIdx + 1}</td>
+                        <td className="px-5 py-4">
+                          <span className="px-2 py-0.5 font-mono text-xs text-gray-600 bg-gray-100 rounded">{c.client_id}</span>
+                        </td>
+                        <td className="px-5 py-4 min-w-[220px]">
+                          <div className="flex items-center gap-3">
+                            <div className="flex items-center justify-center text-xs font-medium text-gray-600 bg-gray-100 rounded-full w-9 h-9 shrink-0">
+                              {getInitials(c.business_name)}
+                            </div>
+                            <div className="min-w-0">
+                              <p className="flex items-center gap-2 text-gray-800">
+                                {c.business_name || '—'}
+                                {isNewClient(c) && (
+                                  <span className="px-1.5 py-0.5 text-xs font-medium text-white bg-gray-900 rounded">New</span>
+                                )}
+                              </p>
+                              {c.trade_name && <p className="mt-0.5 text-xs text-gray-400">{c.trade_name}</p>}
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-5 py-4 text-gray-600 whitespace-nowrap">{c.account || '—'}</td>
+                        <td className="px-5 py-4 text-gray-600 whitespace-nowrap">{c.tax_type || '—'}</td>
+                        <td className="px-5 py-4 text-gray-600 max-w-[150px]">
+                          <span title={c.tax_payer_classification} className="block truncate">{c.tax_payer_classification || '—'}</span>
+                        </td>
+                        <td className="px-5 py-4 font-mono text-xs text-gray-600 whitespace-nowrap">{c.tin || '—'}</td>
+                        <td className="px-5 py-4 text-gray-600 whitespace-nowrap">
+                          <p>{c.contact_person || '—'}</p>
+                          {(c.email_address || c.contact_number) && (
+                            <p className="mt-0.5 text-xs text-gray-400">
+                              {[c.email_address, c.contact_number].filter(Boolean).join(' · ')}
+                            </p>
+                          )}
+                        </td>
+                        <td className="px-5 py-4 text-gray-500 whitespace-nowrap">{fmtDate(c.date_of_coverage)}</td>
+                        <td className="px-5 py-4 whitespace-nowrap">
+                          <span className={`px-2 py-0.5 text-xs font-medium rounded capitalize ${statusColor(c.approval_status)}`}>
+                            {c.approval_status || 'N/A'}
+                          </span>
+                        </td>
+                        <td className="px-5 py-4">
+                          <div className="flex items-center justify-end gap-1 transition-opacity opacity-0 group-hover:opacity-100">
+                            <button onClick={() => setSelectedClient(c)} title="View" className={iconBtn}>
+                              <Eye size={15} />
+                            </button>
+                            <button onClick={() => handleDelete(c.id)} title="Deactivate" className={iconBtn}>
+                              <Trash2 size={15} />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
 
-              {/* ── PAGINATION ── */}
-              <Pagination
-                currentPage={currentPage}
-                totalPages={totalPages}
-                onPageChange={setCurrentPage}
-                pageSize={pageSize}
-                onPageSizeChange={setPageSize}
-                totalRecords={filtered.length}
-              />
-            </>
-          )}
-        </div>
+            <Pagination
+              currentPage={currentPage}
+              totalPages={totalPages}
+              onPageChange={setCurrentPage}
+              pageSize={pageSize}
+              onPageSizeChange={setPageSize}
+              totalRecords={filtered.length}
+            />
+          </>
+        )}
       </div>
 
       {/* ── DETAIL MODAL ── */}
       {selectedClient && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm">
-          <div className="w-full max-w-2xl bg-white rounded-2xl shadow-2xl flex flex-col max-h-[88vh] overflow-hidden">
-            <div className="py-5 px-7 bg-gradient-to-r from-teal-800 to-emerald-700 rounded-t-2xl shrink-0">
-              <div className="flex items-start justify-between">
-                <div className="flex-1 min-w-0">
-                  <div className="flex flex-wrap items-center gap-2 mb-2">
-                    {selectedClient.account && (
-                      <span className={`text-xs font-bold px-2.5 py-0.5 rounded-full ${accountColor(selectedClient.account)}`}>{selectedClient.account}</span>
-                    )}
-                    {selectedClient.approval_status && (
-                      <span className={`text-xs font-bold px-2.5 py-0.5 rounded-full ${statusColor(selectedClient.approval_status)}`}>{selectedClient.approval_status}</span>
-                    )}
-                  </div>
-                  <h2 className="text-xl font-bold leading-tight text-white truncate">{selectedClient.business_name || 'Client Details'}</h2>
-                  <p className="mt-1 font-mono text-xs text-teal-100">{selectedClient.client_id}</p>
-                </div>
-                <button onClick={() => setSelectedClient(null)} className="mt-1 ml-4 text-xl transition text-white/50 hover:text-white shrink-0">✕</button>
-              </div>
-            </div>
-
-            <div className="flex-1 py-6 overflow-y-auto px-7">
-              <Section icon={FaBuilding} title="Business Info">
-                <DField label="Business Name" value={selectedClient.business_name} />
-                <DField label="Trade Name" value={selectedClient.trade_name} />
-                <DField label="Line of Business" value={selectedClient.line_of_business} />
-                <DField label="Business Registration" value={selectedClient.business_registration} />
-                <DField label="Entity Type" value={selectedClient.entity_type} />
-                <DField label="Source of Income" value={selectedClient.source_of_income} />
-                <DField label="Date of Coverage" value={fmtDate(selectedClient.date_of_coverage)} />
-                <DField label="Month of Coverage" value={fmtDate(selectedClient.month_of_coverage)} />
-              </Section>
-              <Section icon={FaBuilding} title="Tax & Registration">
-                <DField label="Tax Type" value={selectedClient.tax_type} />
-                <DField label="Tax Payer Classification" value={selectedClient.tax_payer_classification} span2 />
-                <DField label="TIN" value={selectedClient.tin} mono />
-                <DField label="SEC Reg. No." value={selectedClient.sec_registration_no} mono />
-                <DField label="DTI Registration" value={selectedClient.dti_registration} />
-                <DField label="Biz Reg. Numbers" value={selectedClient.business_registration_numbers} />
-                <DField label="Date of Incorporation" value={fmtDate(selectedClient.date_of_incorporation)} />
-                <DField label="Date of Expiration" value={fmtDate(selectedClient.date_of_expiration)} />
-                <DField label="SSS Employer No." value={selectedClient.sss_employer_no} mono />
-                <DField label="PHIC Employer No." value={selectedClient.phic_employer_no} mono />
-                <DField label="HDMF Employer No." value={selectedClient.hdmf_employer_no} mono />
-                <DField label="Corporation Signatory" value={selectedClient.corporation_signatory_type} />
-                <DField label="Sole Prop. Signatory" value={selectedClient.sole_proprietor_signatory_type} />
-              </Section>
-              <Section icon={FaMapMarkerAlt} title="Address">
-                <DField label="Registered Business Address" value={selectedClient.registered_business_address} span2 />
-                <DField label="RDO" value={selectedClient.rdo} />
-                <DField label="District" value={selectedClient.district} />
-                <DField label="Zip Code" value={selectedClient.zip_code} />
-                <DField label="Renting?" value={selectedClient.renting} />
-                {selectedClient.renting === 'Yes' && <DField label="VAT Type" value={selectedClient.renting_vat_type} />}
-              </Section>
-              {selectedClient.entity_type === 'Sole Proprietor' && (
-                <Section icon={FaUser} title="Owner Details">
-                  <DField label="Father's Name" value={selectedClient.fathers_name} />
-                  <DField label="Mother's Maiden Name" value={selectedClient.mothers_maiden_name} />
-                  <DField label="Marital Status" value={selectedClient.marital_status} />
-                  <DField label="Date of Birth" value={fmtDate(selectedClient.date_of_birth)} />
-                  <DField label="Citizenship" value={selectedClient.citizenship} />
-                  <DField label="Gender" value={selectedClient.gender} />
-                  <DField label="Present Home Address" value={selectedClient.present_home_address} span2 />
-                  <DField label="Permanent Home Address" value={selectedClient.permanent_home_address} span2 />
-                  <DField label="Personal Email" value={selectedClient.personal_email_address} span2 />
-                </Section>
+        <Modal
+          wide
+          title={selectedClient.business_name || 'Client Details'}
+          subtitle={selectedClient.client_id}
+          onClose={() => setSelectedClient(null)}
+        >
+          <div className="flex-1 px-6 py-5 overflow-y-auto">
+            <div className="flex flex-wrap items-center gap-2 mb-5">
+              {selectedClient.account && (
+                <span className="px-2 py-0.5 text-xs font-medium text-gray-600 bg-gray-100 rounded">{selectedClient.account}</span>
               )}
-              <Section icon={FaPhone} title="Contact">
-                <DField label="Contact Person" value={selectedClient.contact_person} />
-                <DField label="Designation" value={selectedClient.designation} />
-                <DField label="Email Address" value={selectedClient.email_address} />
-                <DField label="Contact Number" value={selectedClient.contact_number} mono />
-                <DField label="Office Contact No." value={selectedClient.official_office_contact_number} mono />
-                <DField label="Contact Information" value={selectedClient.contact_information} span2 />
-              </Section>
-              <div className="flex items-center justify-between text-[10px] text-slate-300 pt-2 border-t border-slate-100">
-                <span>Record ID: {selectedClient.id}</span>
-                <span>Added: {fmtDate(selectedClient.created_at)}</span>
-              </div>
+              {selectedClient.approval_status && (
+                <span className={`px-2 py-0.5 text-xs font-medium rounded capitalize ${statusColor(selectedClient.approval_status)}`}>
+                  {selectedClient.approval_status}
+                </span>
+              )}
             </div>
 
-            <div className="py-4 border-t px-7 border-slate-100 shrink-0">
-              <button onClick={() => setSelectedClient(null)}
-                className="w-full py-2.5 rounded-xl text-sm font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 transition">
-                Close
-              </button>
+            <Section title="Business Info">
+              <DField label="Business Name" value={selectedClient.business_name} />
+              <DField label="Trade Name" value={selectedClient.trade_name} />
+              <DField label="Line of Business" value={selectedClient.line_of_business} />
+              <DField label="Business Registration" value={selectedClient.business_registration} />
+              <DField label="Entity Type" value={selectedClient.entity_type} />
+              <DField label="Source of Income" value={selectedClient.source_of_income} />
+              <DField label="Date of Coverage" value={fmtDate(selectedClient.date_of_coverage)} />
+              <DField label="Month of Coverage" value={fmtDate(selectedClient.month_of_coverage)} />
+            </Section>
+            <Section title="Tax & Registration">
+              <DField label="Tax Type" value={selectedClient.tax_type} />
+              <DField label="Tax Payer Classification" value={selectedClient.tax_payer_classification} span2 />
+              <DField label="TIN" value={selectedClient.tin} mono />
+              <DField label="SEC Reg. No." value={selectedClient.sec_registration_no} mono />
+              <DField label="DTI Registration" value={selectedClient.dti_registration} />
+              <DField label="Biz Reg. Numbers" value={selectedClient.business_registration_numbers} />
+              <DField label="Date of Incorporation" value={fmtDate(selectedClient.date_of_incorporation)} />
+              <DField label="Date of Expiration" value={fmtDate(selectedClient.date_of_expiration)} />
+              <DField label="SSS Employer No." value={selectedClient.sss_employer_no} mono />
+              <DField label="PHIC Employer No." value={selectedClient.phic_employer_no} mono />
+              <DField label="HDMF Employer No." value={selectedClient.hdmf_employer_no} mono />
+              <DField label="Corporation Signatory" value={selectedClient.corporation_signatory_type} />
+              <DField label="Sole Prop. Signatory" value={selectedClient.sole_proprietor_signatory_type} />
+            </Section>
+            <Section title="Address">
+              <DField label="Registered Business Address" value={selectedClient.registered_business_address} span2 />
+              <DField label="RDO" value={selectedClient.rdo} />
+              <DField label="District" value={selectedClient.district} />
+              <DField label="Zip Code" value={selectedClient.zip_code} />
+              <DField label="Renting?" value={selectedClient.renting} />
+              {selectedClient.renting === 'Yes' && <DField label="VAT Type" value={selectedClient.renting_vat_type} />}
+            </Section>
+            {selectedClient.entity_type === 'Sole Proprietor' && (
+              <Section title="Owner Details">
+                <DField label="Father's Name" value={selectedClient.fathers_name} />
+                <DField label="Mother's Maiden Name" value={selectedClient.mothers_maiden_name} />
+                <DField label="Marital Status" value={selectedClient.marital_status} />
+                <DField label="Date of Birth" value={fmtDate(selectedClient.date_of_birth)} />
+                <DField label="Citizenship" value={selectedClient.citizenship} />
+                <DField label="Gender" value={selectedClient.gender} />
+                <DField label="Present Home Address" value={selectedClient.present_home_address} span2 />
+                <DField label="Permanent Home Address" value={selectedClient.permanent_home_address} span2 />
+                <DField label="Personal Email" value={selectedClient.personal_email_address} span2 />
+              </Section>
+            )}
+            <Section title="Contact">
+              <DField label="Contact Person" value={selectedClient.contact_person} />
+              <DField label="Designation" value={selectedClient.designation} />
+              <DField label="Email Address" value={selectedClient.email_address} />
+              <DField label="Contact Number" value={selectedClient.contact_number} mono />
+              <DField label="Office Contact No." value={selectedClient.official_office_contact_number} mono />
+              <DField label="Contact Information" value={selectedClient.contact_information} span2 />
+            </Section>
+            <div className="flex items-center justify-between pt-2 text-xs text-gray-300 border-t border-gray-100">
+              <span>Record ID: {selectedClient.id}</span>
+              <span>Added: {fmtDate(selectedClient.created_at)}</span>
             </div>
           </div>
-        </div>
+
+          <div className="flex justify-end px-6 py-4 border-t border-gray-100 shrink-0">
+            <button onClick={() => setSelectedClient(null)} className={btnGhost}>Close</button>
+          </div>
+        </Modal>
       )}
 
       {/* ── EXPORT MODAL ── */}
       {showExport && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm">
-          <div className="w-full max-w-md overflow-hidden bg-white shadow-2xl rounded-2xl">
-            <div className="px-6 py-5 bg-gradient-to-r from-teal-800 to-emerald-700">
-              <h2 className="text-base font-bold text-white">Export Masterlist</h2>
-              <p className="text-xs text-teal-100 mt-0.5">{sorted.length} records (all pages) · {filterDesc}</p>
+        <Modal
+          title="Export Masterlist"
+          subtitle={`${sorted.length} records (all pages) · ${filterDesc}`}
+          onClose={() => setShowExport(false)}
+        >
+          <div className="px-6 py-5 overflow-y-auto">
+            <p className={labelCls}>Columns to include</p>
+            <div className="grid grid-cols-2 gap-1.5 mb-5 overflow-y-auto max-h-52">
+              {ALL_COLS.map(col => (
+                <label key={col.key} className={`flex items-center gap-2 px-3 py-2 text-xs border rounded-md cursor-pointer transition ${
+                  exportCols[col.key]
+                    ? 'border-gray-900 bg-gray-50 text-gray-800'
+                    : 'border-gray-200 text-gray-500 hover:bg-gray-50'
+                }`}>
+                  <input
+                    type="checkbox"
+                    checked={exportCols[col.key]}
+                    onChange={e => setExportCols(p => ({ ...p, [col.key]: e.target.checked }))}
+                    className="accent-gray-900 shrink-0"
+                  />
+                  {col.label}
+                </label>
+              ))}
             </div>
-            <div className="p-6">
-              <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400 mb-2">Columns to include</p>
-              <div className="grid grid-cols-2 gap-1.5 mb-5 max-h-52 overflow-y-auto">
-                {ALL_COLS.map(col => (
-                  <label key={col.key} className={`flex items-center gap-2 px-3 py-2 rounded-lg border cursor-pointer transition text-xs font-medium ${
-                    exportCols[col.key] ? 'border-teal-400 bg-teal-50 text-teal-700' : 'border-slate-200 text-slate-500 hover:border-slate-300'
-                  }`}>
-                    <input type="checkbox" checked={exportCols[col.key]}
-                      onChange={e => setExportCols(p => ({ ...p, [col.key]: e.target.checked }))}
-                      className="accent-teal-700 shrink-0" />
-                    {col.label}
-                  </label>
-                ))}
-              </div>
-              {!libsLoaded && (
-                <p className="text-center text-xs text-amber-500 mb-3 flex items-center justify-center gap-1.5">
-                  <span className="animate-spin">⟳</span> Loading export libraries...
-                </p>
-              )}
-              <div className="flex gap-2">
-                <button onClick={() => setShowExport(false)}
-                  className="flex-1 py-2.5 text-sm font-semibold rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 transition">
-                  Cancel
-                </button>
-                <button
-                  onClick={() => { setShowExport(false); exportExcel(allGroups, activeCols, filterDesc); }}
-                  disabled={!libsLoaded}
-                  className="flex items-center justify-center gap-2 flex-1 py-2.5 text-sm font-semibold rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white transition disabled:opacity-40">
-                  <FaFileExcel size={13} /> Excel
-                </button>
-                <button
-                  onClick={() => { setShowExport(false); exportPDF(allGroups, activeCols, filterDesc, sortLabel, groupLabel); }}
-                  disabled={!libsLoaded}
-                  className="flex items-center justify-center gap-2 flex-1 py-2.5 text-sm font-semibold rounded-xl bg-red-600 hover:bg-red-700 text-white transition disabled:opacity-40">
-                  <FaFilePdf size={13} /> PDF
-                </button>
-              </div>
+
+            {!libsLoaded && (
+              <p className="flex items-center justify-center gap-1.5 mb-3 text-xs text-gray-400">
+                <RefreshCw size={12} className="animate-spin" /> Loading export libraries...
+              </p>
+            )}
+
+            <div className="flex justify-end gap-2">
+              <button onClick={() => setShowExport(false)} className={btnGhost}>Cancel</button>
+              <button
+                onClick={() => { setShowExport(false); exportExcel(allGroups, activeCols, filterDesc); }}
+                disabled={!libsLoaded}
+                className={btnGhost}
+              >
+                <FileSpreadsheet size={14} /> Excel
+              </button>
+              <button
+                onClick={() => { setShowExport(false); exportPDF(allGroups, activeCols, filterDesc); }}
+                disabled={!libsLoaded}
+                className={btnPrimary}
+              >
+                <FileText size={14} /> PDF
+              </button>
             </div>
           </div>
-        </div>
+        </Modal>
       )}
     </div>
   );

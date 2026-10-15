@@ -17,6 +17,8 @@ const labelCls = "block text-xs font-medium text-gray-500 mb-1";
 const GREEN = "#1a5c2e";
 const RED = "#c0392b";
 
+const OTHER = "__other__"; // remittance na hindi matag sa specific account
+
 function fmt(n) {
   return Number(n || 0).toLocaleString("en-PH", {
     minimumFractionDigits: 2,
@@ -32,6 +34,8 @@ function fmtDate(d) {
     day: "numeric",
   });
 }
+
+const r2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
 
 const PAYMENT_METHODS = [
   { value: "cash", label: "Cash" },
@@ -61,6 +65,114 @@ const generateInvoiceNumber = async () => {
   return `${prefix}${next}`;
 };
 
+// ── Per-account remittance allocation ─────────────────────────────────────
+// items    = remittance billing_items ng SOA: [{ code, amount }] (ordered by account_code, id)
+// receipts = lahat ng official_receipts ng SOA na iyon
+// Ang may naka-save na remittance_breakdown ay ginagamit as-is. Ang luma (walang breakdown)
+// ay ina-allocate nang sunod-sunod (id order) sa mga account na may natitira pa.
+// !! Same function ito sa RemittancesPayables.jsx — dapat laging magkapareho.
+function allocateRemittance(items, receipts) {
+  const billed = {};
+  const order = [];
+  (items || []).forEach((i) => {
+    const code = i.code || OTHER;
+    if (!(code in billed)) {
+      billed[code] = 0;
+      order.push(code);
+    }
+    billed[code] += Number(i.amount) || 0;
+  });
+  const rem = { ...billed };
+  const perReceipt = {};
+  const sorted = [...(receipts || [])].sort((a, b) =>
+    a.id > b.id ? 1 : a.id < b.id ? -1 : 0,
+  );
+
+  sorted.forEach((r) => {
+    const stored = r.remittance_breakdown;
+    if (stored && typeof stored === "object" && Object.keys(stored).length) {
+      const bd = {};
+      Object.keys(stored).forEach((k) => {
+        const v = Number(stored[k]) || 0;
+        bd[k] = v;
+        if (k in rem) rem[k] = r2(rem[k] - v);
+      });
+      perReceipt[r.id] = bd;
+      return;
+    }
+
+    let left = r2(r.remittance_amount);
+    const bd = {};
+    if (left > 0.005) {
+      order.forEach((code) => {
+        if (left <= 0.005) return;
+        const take = Math.min(left, Math.max(rem[code], 0));
+        if (take > 0.005) {
+          bd[code] = r2(take);
+          rem[code] = r2(rem[code] - take);
+          left = r2(left - take);
+        }
+      });
+      if (left > 0.005) bd[OTHER] = r2((bd[OTHER] || 0) + left);
+    } else if (left < -0.005) {
+      // reversal na walang breakdown: ibalik sa mga account (huling account muna)
+      let back = -left;
+      [...order].reverse().forEach((code) => {
+        if (back <= 0.005) return;
+        const give = Math.min(back, Math.max(billed[code] - rem[code], 0));
+        if (give > 0.005) {
+          bd[code] = r2(-give);
+          rem[code] = r2(rem[code] + give);
+          back = r2(back - give);
+        }
+      });
+      if (back > 0.005) bd[OTHER] = r2((bd[OTHER] || 0) - back);
+    }
+    perReceipt[r.id] = bd;
+  });
+
+  return { billed, rem, order, perReceipt };
+}
+
+// Kunin ang kasalukuyang per-account na natitira para sa isang SOA
+async function loadRemittanceState(billingId) {
+  const { data: its, error: iErr } = await supabase
+    .from("billing_items")
+    .select("account_code, amount")
+    .eq("billing_id", billingId)
+    .eq("item_type", "remittance")
+    .order("account_code", { ascending: true })
+    .order("id", { ascending: true });
+  if (iErr) throw iErr;
+  const { data: rc, error: rErr } = await supabase
+    .from("official_receipts")
+    .select("id, remittance_amount, remittance_breakdown")
+    .eq("billing_id", billingId)
+    .order("id", { ascending: true });
+  if (rErr) throw rErr;
+  return allocateRemittance(
+    (its || []).map((i) => ({ code: i.account_code || OTHER, amount: i.amount })),
+    rc || [],
+  );
+}
+
+// I-split ang remittance amount ng bagong payment sa mga account na may natitira
+function splitRemittance(amount, st) {
+  const bd = {};
+  let left = r2(amount);
+  if (left <= 0.005) return bd;
+  (st?.order || []).forEach((code) => {
+    if (left <= 0.005) return;
+    const take = Math.min(left, Math.max(st.rem[code] || 0, 0));
+    if (take > 0.005) {
+      bd[code] = r2(take);
+      left = r2(left - take);
+    }
+  });
+  if (left > 0.005) bd[OTHER] = r2((bd[OTHER] || 0) + left);
+  return bd;
+}
+
 /**
  * Props:
  *  - currentUser: same shape used elsewhere (fullName / full_name)
@@ -85,8 +197,6 @@ export default function RecordPayment({
   const clientRef = useRef(null);
 
   // ── Outstanding SOAs for the selected client ──
-  // Each row here carries a computed `balance` (charges - payments already
-  // applied to that specific billing_id), NOT just the raw SOA status.
   const [outstandingSOAs, setOutstandingSOAs] = useState([]);
   const [soaLoading, setSoaLoading] = useState(false);
   const [selectedBilling, setSelectedBilling] = useState(null); // null = unapplied/general payment
@@ -118,6 +228,10 @@ export default function RecordPayment({
   const [paymentMethod, setPaymentMethod] = useState("cash");
   const [referenceNumber, setReferenceNumber] = useState("");
   const [notes, setNotes] = useState("");
+
+  // Only used for a general/unapplied payment (no SOA selected)
+  const [generalIncomeAmount, setGeneralIncomeAmount] = useState("");
+  const [generalRemittanceAmount, setGeneralRemittanceAmount] = useState("");
 
   const [showReversalModal, setShowReversalModal] = useState(false);
   const [reversalOrNumber, setReversalOrNumber] = useState("");
@@ -244,11 +358,7 @@ export default function RecordPayment({
     if (selectedClient) fetchClientCredit(selectedClient);
   }, [selectedClient, fetchClientCredit]);
 
-  // ── Fetch outstanding SOAs once a client is selected ──────────────────
-  // FIX: "outstanding" now means "has a remaining balance > 0", computed as
-  // (sum of billing_items.amount) − (sum of official_receipts.amount already
-  // applied to that billing_id). A SOA with status "approved"/"unpaid" that
-  // has already been fully paid off will no longer show up here.
+  // ── Fetch outstanding SOAs once a client is selected ──
   const fetchOutstandingSOAs = useCallback(async (client) => {
     if (!client) return;
     setSoaLoading(true);
@@ -267,38 +377,59 @@ export default function RecordPayment({
         return;
       }
 
-      // Charges per SOA
       const { data: items, error: itErr } = await supabase
         .from("billing_items")
-        .select("billing_id, amount")
+        .select("billing_id, amount, item_type")
         .in("billing_id", billingIds);
       if (itErr) throw itErr;
-      const chargeTotals = {};
+      const incomeChargeTotals = {};
+      const remittanceChargeTotals = {};
       (items || []).forEach((i) => {
-        chargeTotals[i.billing_id] =
-          (chargeTotals[i.billing_id] || 0) + (Number(i.amount) || 0);
+        const bucket =
+          i.item_type === "remittance"
+            ? remittanceChargeTotals
+            : incomeChargeTotals;
+        bucket[i.billing_id] =
+          (bucket[i.billing_id] || 0) + (Number(i.amount) || 0);
       });
 
-      // Payments already applied directly to these SOAs
       const { data: receipts, error: orErr } = await supabase
         .from("official_receipts")
-        .select("billing_id, amount")
+        .select("billing_id, amount, income_amount, remittance_amount")
         .in("billing_id", billingIds);
       if (orErr) throw orErr;
-      const paidTotals = {};
+      const incomePaidTotals = {};
+      const remittancePaidTotals = {};
       (receipts || []).forEach((r) => {
-        paidTotals[r.billing_id] =
-          (paidTotals[r.billing_id] || 0) + (Number(r.amount) || 0);
+        incomePaidTotals[r.billing_id] =
+          (incomePaidTotals[r.billing_id] || 0) +
+          (Number(r.income_amount) || 0);
+        remittancePaidTotals[r.billing_id] =
+          (remittancePaidTotals[r.billing_id] || 0) +
+          (Number(r.remittance_amount) || 0);
       });
 
       const withBalance = (statements || [])
         .map((s) => {
-          const charges = chargeTotals[s.id] || 0;
-          const paid = paidTotals[s.id] || 0;
-          return { ...s, charges, paid, balance: charges - paid };
+          const incomeCharges = incomeChargeTotals[s.id] || 0;
+          const remittanceCharges = remittanceChargeTotals[s.id] || 0;
+          const incomePaid = incomePaidTotals[s.id] || 0;
+          const remittancePaid = remittancePaidTotals[s.id] || 0;
+          const incomeBalance = incomeCharges - incomePaid;
+          const remittanceBalance = remittanceCharges - remittancePaid;
+          const charges = incomeCharges + remittanceCharges;
+          const paid = incomePaid + remittancePaid;
+          return {
+            ...s,
+            charges,
+            paid,
+            incomeCharges,
+            remittanceCharges,
+            incomeBalance,
+            remittanceBalance,
+            balance: incomeBalance + remittanceBalance,
+          };
         })
-        // Only keep SOAs that still owe something. A fully-settled SOA whose
-        // status hasn't been flipped yet (e.g. old data) is filtered out here too.
         .filter((s) => s.balance > 0.005);
 
       setOutstandingSOAs(withBalance);
@@ -450,7 +581,9 @@ export default function RecordPayment({
     try {
       const { data, error } = await supabase
         .from("billing_items")
-        .select("id, account_code, agency, description, period_covered, amount")
+        .select(
+          "id, account_code, agency, description, period_covered, amount, item_type",
+        )
         .eq("billing_id", billing.id)
         .order("agency", { ascending: true });
       if (!error) setBillingItems(data || []);
@@ -464,18 +597,67 @@ export default function RecordPayment({
     fetchBillingItems(b);
   };
 
+  // ── Allocate a payment across the two fund pools ──
+  // Gov't Remittance muna, tapos Retainer Fee, ang sobra = client credit.
+  const allocatePayment = (paidAmount) => {
+    if (!selectedBilling) {
+      return {
+        incomeAlloc: parseFloat(generalIncomeAmount) || 0,
+        remittanceAlloc: parseFloat(generalRemittanceAmount) || 0,
+        overpay: 0,
+      };
+    }
+    const remittanceBalance = Math.max(
+      selectedBilling.remittanceBalance || 0,
+      0,
+    );
+    const incomeBalance = Math.max(selectedBilling.incomeBalance || 0, 0);
+    const remittanceAlloc = Math.min(paidAmount, remittanceBalance);
+    const afterRemittance = paidAmount - remittanceAlloc;
+    const incomeAlloc = Math.min(afterRemittance, incomeBalance);
+    const overpay = afterRemittance - incomeAlloc;
+    return { incomeAlloc, remittanceAlloc, overpay };
+  };
+
+  // Per-account split ng remittanceAlloc → i-save sa remittance_breakdown
+  const buildBreakdown = async (remittanceAlloc, billingId) => {
+    if (remittanceAlloc <= 0.005) return null;
+    if (!billingId) return { [OTHER]: r2(remittanceAlloc) }; // general payment: walang account
+    const st = await loadRemittanceState(billingId);
+    const bd = splitRemittance(remittanceAlloc, st);
+    return Object.keys(bd).length ? bd : null;
+  };
+
+const bumpFundPools = async ({ incomeAlloc, remittanceAlloc }) => {
+  if (Math.abs(incomeAlloc) > 0.005) {
+    const { error } = await supabase.rpc("increment_fund_pool", {
+      p_pool_type: "income",
+      p_amount: incomeAlloc,
+    });
+    if (error) console.error("Failed to credit income pool:", error);
+  }
+  if (Math.abs(remittanceAlloc) > 0.005) {
+    const { error } = await supabase.rpc("increment_fund_pool", {
+      p_pool_type: "remittance",
+      p_amount: remittanceAlloc,
+    });
+    if (error) console.error("Failed to credit remittance pool:", error);
+  }
+};
+
   // ── Apply available credit toward the selected SOA ──
-  // Separate action from the normal cash/bank payment form below — this
-  // settles (fully or partially) the SOA using the client's existing credit
-  // balance instead of new money. Still creates an official_receipts row
-  // (payment_method: "credit") so it shows up in the audit trail / totals.
   const applyCreditToBilling = async () => {
     if (!selectedBilling || clientCredit <= 0) return;
     setApplyingCredit(true);
     setMessage("");
     try {
       const amt = Math.min(clientCredit, selectedBilling.balance);
+      const { incomeAlloc, remittanceAlloc } = allocatePayment(amt);
       const creditInvoiceNumber = await generateInvoiceNumber();
+      const breakdown = await buildBreakdown(
+        remittanceAlloc,
+        selectedBilling.id,
+      );
 
       const { data, error } = await supabase
         .from("official_receipts")
@@ -486,6 +668,9 @@ export default function RecordPayment({
             billing_id: selectedBilling.id,
             soa_number: selectedBilling.soa_number,
             amount: amt,
+            income_amount: incomeAlloc,
+            remittance_amount: remittanceAlloc,
+            remittance_breakdown: breakdown,
             payment_date: today_(),
             payment_method: "credit",
             reference_number: null,
@@ -498,7 +683,8 @@ export default function RecordPayment({
         .single();
       if (error) throw error;
 
-      // Deduct the used amount from the credit balance
+      await bumpFundPools({ incomeAlloc, remittanceAlloc });
+
       const newCredit = clientCredit - amt;
       const { error: creditErr } = await supabase
         .from("client_credits")
@@ -506,7 +692,6 @@ export default function RecordPayment({
         .eq("client_id", selectedClient.client_id);
       if (creditErr) throw creditErr;
 
-      // Flip SOA to paid if this fully settles it
       const newBalance = selectedBilling.balance - amt;
       if (newBalance <= 0.005) {
         await supabase
@@ -541,12 +726,13 @@ export default function RecordPayment({
     (sum, it) => sum + Number(it.amount || 0),
     0,
   );
-  // FIX: "Use SOA total" should default to the *remaining balance*, not the
-  // full original SOA amount — otherwise a partially-paid SOA would let you
-  // accidentally overpay by prefilling the original total again.
   const remainingBalance = selectedBilling
     ? selectedBilling.balance
     : itemsTotal;
+
+  const generalTotal =
+    (parseFloat(generalIncomeAmount) || 0) +
+    (parseFloat(generalRemittanceAmount) || 0);
 
   // ── Submit ──
   const validate = () => {
@@ -555,7 +741,7 @@ export default function RecordPayment({
       setMessageType("error");
       return false;
     }
-    const amt = parseFloat(amount);
+    const amt = selectedBilling ? parseFloat(amount) || 0 : generalTotal;
     if (!amt || amt <= 0) {
       setMessage("Please enter a valid payment amount.");
       setMessageType("error");
@@ -574,13 +760,22 @@ export default function RecordPayment({
     setSaving(true);
     setMessage("");
     try {
-      const paidAmount = parseFloat(amount);
+      const paidAmount = selectedBilling ? parseFloat(amount) : generalTotal;
+      const { incomeAlloc, remittanceAlloc } = allocatePayment(paidAmount);
+      const breakdown = await buildBreakdown(
+        remittanceAlloc,
+        selectedBilling?.id || null,
+      );
+
       const payload = {
         invoice_number: invoiceNumber,
         client_id: selectedClient.client_id,
         billing_id: selectedBilling?.id || null,
         soa_number: selectedBilling?.soa_number || null,
         amount: paidAmount,
+        income_amount: incomeAlloc,
+        remittance_amount: remittanceAlloc,
+        remittance_breakdown: breakdown, // { account_code: amount } — tag per account
         payment_date: collectionDate,
         payment_method: paymentMethod,
         reference_number: referenceNumber || null,
@@ -596,7 +791,7 @@ export default function RecordPayment({
         collected_by:
           paymentMethod === "cash" || paymentMethod === "cheque"
             ? collectedBy || null
-            : null, // Collected by — manual, cash & cheque
+            : null,
         recorded_by: userFullName,
         deposit_status:
           paymentMethod === "bank_transfer" ? "deposited" : "undeposited",
@@ -611,11 +806,8 @@ export default function RecordPayment({
 
       if (error) throw error;
 
-      // FIX: after the payment is recorded, flip the SOA's status once it's
-      // fully settled so it drops out of "Outstanding Statements" / AR Aging
-      // on next load — this is the update that was missing before.
-      // If the payment OVERPAYS this SOA, the excess is banked as client
-      // credit instead of silently disappearing.
+      await bumpFundPools({ incomeAlloc, remittanceAlloc });
+
       if (selectedBilling) {
         const newBalance = selectedBilling.balance - paidAmount;
         if (newBalance <= 0.005) {
@@ -667,6 +859,8 @@ export default function RecordPayment({
       setReceivingBank("");
       setCollectedBy("");
       setNotes("");
+      setGeneralIncomeAmount("");
+      setGeneralRemittanceAmount("");
       generateInvoiceNumber().then(setInvoiceNumber);
     } catch (err) {
       setMessage(`Error: ${err.message}`);
@@ -696,7 +890,48 @@ export default function RecordPayment({
         setReversing(false);
         return;
       }
+      if (Number(original.amount) < 0) {
+  setMessage("Hindi pwedeng i-reverse ang isang reversal entry.");
+  setMessageType("error");
+  setReversing(false);
+  return;
+}
 
+const { data: already } = await supabase
+  .from("official_receipts")
+  .select("invoice_number")
+  .ilike("notes", `Reversal of Invoice ${original.invoice_number} %`)
+  .limit(1);
+if (already?.length) {
+  setMessage(`Invoice ${original.invoice_number} has already been reversed.`);
+  setMessageType("error");
+  setReversing(false);
+  return;
+}
+
+      // Breakdown ng original — kung luma (walang naka-save), i-compute
+      let origBd =
+        original.remittance_breakdown &&
+        typeof original.remittance_breakdown === "object" &&
+        Object.keys(original.remittance_breakdown).length
+          ? original.remittance_breakdown
+          : null;
+      if (!origBd) {
+        if (original.billing_id) {
+          const st = await loadRemittanceState(original.billing_id);
+          origBd = st.perReceipt[original.id] || {};
+        } else if (Number(original.remittance_amount)) {
+          origBd = { [OTHER]: Number(original.remittance_amount) };
+        } else {
+          origBd = {};
+        }
+      }
+      const reversalBd = {};
+      Object.keys(origBd).forEach((k) => {
+        const v = Number(origBd[k]) || 0;
+        if (Math.abs(v) > 0.005) reversalBd[k] = -Math.abs(v);
+      });
+const wasDeposited = original.deposit_status === "deposited";
       const reversalInvoiceNumber = await generateInvoiceNumber();
       const { data, error } = await supabase
         .from("official_receipts")
@@ -707,18 +942,48 @@ export default function RecordPayment({
             billing_id: original.billing_id,
             soa_number: original.soa_number,
             amount: -Math.abs(original.amount),
+            income_amount: -Math.abs(original.income_amount || 0),
+            remittance_amount: -Math.abs(original.remittance_amount || 0),
+            remittance_breakdown: Object.keys(reversalBd).length
+              ? reversalBd
+              : null,
             payment_date: paymentDate,
             payment_method: original.payment_method,
             reference_number: original.reference_number,
             notes: `Reversal of Invoice ${original.invoice_number} (recorded ${reversalDate})${reversalReason ? " — " + reversalReason : ""}`,
             collected_by: original.collected_by,
             recorded_by: userFullName,
+            deposit_status: wasDeposited ? "deposited" : "undeposited",
+deposited_date: wasDeposited ? paymentDate : null,
+receiving_bank: wasDeposited ? original.receiving_bank || null : null,
           },
         ])
         .select()
         .single();
       if (error) throw error;
 
+      await bumpFundPools({
+        incomeAlloc: -Math.abs(original.income_amount || 0),
+        remittanceAlloc: -Math.abs(original.remittance_amount || 0),
+      });
+if (original.payment_method === "credit") {
+  const back = Math.abs(Number(original.amount) || 0);
+  const { data: cr } = await supabase
+    .from("client_credits")
+    .select("balance")
+    .eq("client_id", original.client_id)
+    .maybeSingle();
+  if (cr) {
+    await supabase
+      .from("client_credits")
+      .update({ balance: Number(cr.balance) + back, updated_at: new Date().toISOString() })
+      .eq("client_id", original.client_id);
+  } else {
+    await supabase
+      .from("client_credits")
+      .insert([{ client_id: original.client_id, balance: back }]);
+  }
+}
       if (original.billing_id) {
         await supabase
           .from("billing_statements")
@@ -926,7 +1191,7 @@ export default function RecordPayment({
             </div>
           )}
 
-          {/* Outstanding SOAs — now shows remaining balance, not just status */}
+          {/* Outstanding SOAs */}
           {selectedClient && (
             <div className="p-5 bg-white border border-gray-100 rounded-xl">
               <label className={labelCls}>Outstanding Statements</label>
@@ -1074,6 +1339,9 @@ export default function RecordPayment({
                         <th className="px-3 py-2 font-medium text-left">
                           Period
                         </th>
+                        <th className="px-3 py-2 font-medium text-left">
+                          Type
+                        </th>
                         <th className="px-3 py-2 font-medium text-right">
                           Amount
                         </th>
@@ -1091,6 +1359,19 @@ export default function RecordPayment({
                           <td className="px-3 py-2 text-gray-400">
                             {it.period_covered || "—"}
                           </td>
+                          <td className="px-3 py-2">
+                            <span
+                              className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-medium ${
+                                it.item_type === "remittance"
+                                  ? "bg-amber-50 text-amber-700"
+                                  : "bg-blue-50 text-blue-700"
+                              }`}
+                            >
+                              {it.item_type === "remittance"
+                                ? "Remittance"
+                                : "Income"}
+                            </span>
+                          </td>
                           <td className="px-3 py-2 font-mono text-right text-gray-700">
                             ₱{fmt(it.amount)}
                           </td>
@@ -1100,7 +1381,7 @@ export default function RecordPayment({
                     <tfoot>
                       <tr className="border-t border-gray-200 bg-gray-50">
                         <td
-                          colSpan={3}
+                          colSpan={4}
                           className="px-3 py-2 font-medium text-right text-gray-600"
                         >
                           SOA Total
@@ -1112,7 +1393,7 @@ export default function RecordPayment({
                       {selectedBilling.paid > 0 && (
                         <tr className="border-t border-gray-100 bg-gray-50">
                           <td
-                            colSpan={3}
+                            colSpan={4}
                             className="px-3 py-2 text-right text-gray-500"
                           >
                             Already paid
@@ -1122,9 +1403,34 @@ export default function RecordPayment({
                           </td>
                         </tr>
                       )}
+                      <tr className="border-t border-gray-100 bg-gray-50">
+                        <td
+                          colSpan={4}
+                          className="px-3 py-2 text-right text-amber-700"
+                        >
+                          Gov't Remittance balance{" "}
+                          <span className="text-[10px] font-medium">
+                            (settled first)
+                          </span>
+                        </td>
+                        <td className="px-3 py-2 font-mono text-right text-amber-700">
+                          ₱{fmt(Math.max(selectedBilling.remittanceBalance, 0))}
+                        </td>
+                      </tr>
+                      <tr className="border-t border-gray-100 bg-gray-50">
+                        <td
+                          colSpan={4}
+                          className="px-3 py-2 text-right text-blue-700"
+                        >
+                          Retainer Fee balance
+                        </td>
+                        <td className="px-3 py-2 font-mono text-right text-blue-700">
+                          ₱{fmt(Math.max(selectedBilling.incomeBalance, 0))}
+                        </td>
+                      </tr>
                       <tr className="border-t border-gray-200 bg-gray-50">
                         <td
-                          colSpan={3}
+                          colSpan={4}
                           className="px-3 py-2 font-semibold text-right text-gray-700"
                         >
                           Remaining Balance
@@ -1155,23 +1461,23 @@ export default function RecordPayment({
                   className={inputCls}
                 />
               </div>
-              <div>
-                <label className={labelCls}>Amount</label>
-                <div className="relative">
-                  <span className="absolute text-sm text-gray-400 -translate-y-1/2 left-3 top-1/2">
-                    ₱
-                  </span>
-                  <input
-                    type="number"
-                    value={amount}
-                    onChange={(e) => setAmount(e.target.value)}
-                    placeholder="0.00"
-                    min="0"
-                    step="0.01"
-                    className={`${inputCls} pl-7 font-mono`}
-                  />
-                </div>
-                {selectedBilling && (
+              {selectedBilling ? (
+                <div>
+                  <label className={labelCls}>Amount</label>
+                  <div className="relative">
+                    <span className="absolute text-sm text-gray-400 -translate-y-1/2 left-3 top-1/2">
+                      ₱
+                    </span>
+                    <input
+                      type="number"
+                      value={amount}
+                      onChange={(e) => setAmount(e.target.value)}
+                      placeholder="0.00"
+                      min="0"
+                      step="0.01"
+                      className={`${inputCls} pl-7 font-mono`}
+                    />
+                  </div>
                   <button
                     type="button"
                     onClick={() => setAmount(remainingBalance.toFixed(2))}
@@ -1179,16 +1485,65 @@ export default function RecordPayment({
                   >
                     Use remaining balance (₱{fmt(remainingBalance)})
                   </button>
-                )}
-                {selectedBilling &&
-                  parseFloat(amount) > remainingBalance + 0.005 && (
+                  <p className="mt-1 text-[11px] text-gray-400">
+                    Gov't Remittance is settled first (up to ₱
+                    {fmt(Math.max(selectedBilling.remittanceBalance, 0))}),
+                    then Retainer Fee (up to ₱
+                    {fmt(Math.max(selectedBilling.incomeBalance, 0))}). Ang
+                    remittance ay awtomatikong itatag per account.
+                  </p>
+                  {parseFloat(amount) > remainingBalance + 0.005 && (
                     <p className="mt-1 text-[11px] text-amber-600">
                       This exceeds the remaining balance by ₱
                       {fmt(parseFloat(amount) - remainingBalance)} — the excess
                       will be recorded but won't apply to this SOA.
                     </p>
                   )}
-              </div>
+                </div>
+              ) : (
+                <div>
+                  <label className={labelCls}>Amount (per pool)</label>
+                  <div className="space-y-2">
+                    <div className="relative">
+                      <span className="absolute text-[9px] font-bold uppercase text-blue-500 -translate-y-1/2 left-3 top-1/2 tracking-wide">
+                        Fee
+                      </span>
+                      <input
+                        type="number"
+                        value={generalIncomeAmount}
+                        onChange={(e) => setGeneralIncomeAmount(e.target.value)}
+                        placeholder="0.00"
+                        min="0"
+                        step="0.01"
+                        className={`${inputCls} pl-12 font-mono`}
+                      />
+                    </div>
+                    <div className="relative">
+                      <span className="absolute text-[9px] font-bold uppercase text-amber-600 -translate-y-1/2 left-3 top-1/2 tracking-wide">
+                        Remit
+                      </span>
+                      <input
+                        type="number"
+                        value={generalRemittanceAmount}
+                        onChange={(e) =>
+                          setGeneralRemittanceAmount(e.target.value)
+                        }
+                        placeholder="0.00"
+                        min="0"
+                        step="0.01"
+                        className={`${inputCls} pl-14 font-mono`}
+                      />
+                    </div>
+                  </div>
+                  <p className="mt-1 text-[11px] text-gray-400">
+                    Total:{" "}
+                    <span className="font-mono font-semibold text-gray-600">
+                      ₱{fmt(generalTotal)}
+                    </span>{" "}
+                    — lagyan ng dalawa kung magkahalo ang binayaran.
+                  </p>
+                </div>
+              )}
             </div>
 
             <div className="grid grid-cols-2 gap-3">

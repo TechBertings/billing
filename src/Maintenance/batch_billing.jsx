@@ -9,6 +9,7 @@ import {
   FaBuilding,
   FaUser,
   FaArrowLeft,
+  FaEye,
 } from "react-icons/fa";
 import { useContributionConfig } from "../utils/use_contributions";
 import { computeSSS, computePHIC, computeHDMF } from "../utils/govt_contributions";
@@ -203,7 +204,7 @@ const fetchFeeItems = useCallback(async () => {
   }, [activeAgencyId, activeClientId]);
 
 
-  const fetchClientTaxes = useCallback(async () => {
+ const fetchClientTaxes = useCallback(async () => {
     if (!activeClientId) {
       setClientTaxMap({});
       return;
@@ -311,7 +312,128 @@ const handleSaveTax = async (t) => {
   setTaxRowSaving((p) => ({ ...p, [t.tax_type]: false }));
 };
 
-  // ✅ useEffect calls come AFTER all function definitions
+   // ── PREVIEW: kung ano ang lalabas sa Create Billing ──────────────────────
+  const [previewRows, setPreviewRows] = useState([]);
+  const [previewSchedules, setPreviewSchedules] = useState([]);
+  const [previewIssues, setPreviewIssues] = useState([]);
+  const [loadingPreview, setLoadingPreview] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
+
+  const fetchPreview = useCallback(async () => {
+    if (!activeClientId) {
+      setPreviewRows([]);
+      setPreviewSchedules([]);
+      setPreviewIssues([]);
+      return;
+    }
+    setLoadingPreview(true);
+    // Same query + rules as CreateBilling.selectClient
+    const { data, error } = await supabase
+      .from("fee_items")
+      .select(
+        "amount, item_name, agency_id, coa_id, rent_fee_id, chart_of_accounts(code, account_name, billing_mode), government_agencies(name, fee_groups(category)), rent_fees(rf_code, rent_fee_details(*))"
+      )
+      .eq("client_id", activeClientId)
+      .eq("is_active", true)
+      .eq("chart_of_accounts.is_active", true);
+
+    if (!error && data) {
+      const flat = [];
+      const sched = [];
+      const issues = [];
+
+      data.forEach((fi) => {
+        const agencyName = fi.government_agencies?.name || "";
+        const isSchedule = fi.chart_of_accounts?.billing_mode === "schedule";
+
+        // same skip rule as CreateBilling
+        if (!isSchedule && agencyName.toUpperCase() === "RETAINER" && !Number(fi.amount)) return;
+
+        const code = fi.chart_of_accounts?.code || "";
+        const name = fi.chart_of_accounts?.account_name || fi.item_name || "";
+        const category =
+          fi.government_agencies?.fee_groups?.category === "remittance" ? "remittance" : "income";
+
+        if (isSchedule && fi.rent_fees) {
+          const details = (fi.rent_fees.rent_fee_details || [])
+            .slice()
+            .sort((a, b) => a.year - b.year);
+          const total = details.reduce(
+            (s, d) =>
+              s + (parseFloat(d.net_of_vat) || 0) + (parseFloat(d.vat) || 0) - (parseFloat(d.wtax) || 0),
+            0
+          );
+          sched.push({ description: name, rf_code: fi.rent_fees.rf_code, details, category, total });
+        } else {
+          const amount = Number(fi.amount) || 0;
+          flat.push({ code, agency: agencyName, description: name, amount, category });
+              if (isSchedule) {
+            issues.push({ level: "warn", text: `${name}: no schedule selected` });
+          } else if (amount === 0) {
+            issues.push({ level: "warn", text: `${name} (${agencyName || "no agency"}): amount is 0` });
+          }
+        }
+      });
+            // Taxes (client_tax_setup) — same as Create Billing
+      const { data: taxes } = await supabase
+        .from("client_tax_setup")
+        .select("*")
+        .eq("client_id", activeClientId)
+        .eq("is_active", true);
+      const { data: taxCoas } = await supabase
+        .from("chart_of_accounts")
+        .select("code, account_name, tax_setup(tax_type), government_agencies(name, fee_groups(category))")
+        .eq("is_active", true)
+        .not("tax_setup_id", "is", null);
+      const coaByTax = {};
+      (taxCoas || []).forEach((c) => {
+        if (c.tax_setup?.tax_type) coaByTax[c.tax_setup.tax_type] = c;
+      });
+         (taxes || []).forEach((t) => {
+        const coa = coaByTax[t.tax_type];
+        const amount =
+          t.computation_type === "fixed" || t.computation_type === "manual"
+            ? Number(t.fixed_amount) || 0
+            : Number(t.payable) || 0;
+        if (!coa) {
+          issues.push({ level: "warn", text: `${t.tax_type}: no account linked in Chart of Accounts` });
+        }
+        if (amount === 0) {
+          issues.push({ level: "warn", text: `${t.tax_type}: amount is 0` });
+          return;
+        } 
+        flat.push({
+          code: coa?.code || "",
+          agency: coa?.government_agencies?.name || "",
+          description: coa?.account_name || t.tax_type,
+          amount,
+          category:
+            coa?.government_agencies?.fee_groups?.category === "remittance" ? "remittance" : "income",
+        });
+      });
+
+      setPreviewRows(flat);
+      setPreviewSchedules(sched);
+      setPreviewIssues(issues);
+    }
+    setLoadingPreview(false);
+  }, [activeClientId]);
+
+  // feeItemsMap nagbabago after every save/remove → auto refresh
+  useEffect(() => { fetchPreview(); }, [fetchPreview, feeItemsMap, clientTaxMap]);
+  // Totals per category
+  const previewTotals = useMemo(() => {
+    const t = { income: 0, remittance: 0 };
+    previewRows.forEach((r) => { t[r.category] += r.amount; });
+    previewSchedules.forEach((s) => { t[s.category] += s.total; });
+    return { ...t, subtotal: t.income + t.remittance };
+  }, [previewRows, previewSchedules]);
+
+  const previewCount = previewRows.length + previewSchedules.length;
+  const previewWarnCount = previewIssues.length;
+
+  const peso = (n) =>
+    "₱" + Number(n || 0).toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   useEffect(() => { fetchClientTaxes(); }, [fetchClientTaxes]);
 useEffect(() => { fetchClientEmployees(); }, [fetchClientEmployees]);
 
@@ -621,13 +743,34 @@ const handleSelectRentFee = async (rentFee) => {
                   <p className="font-mono text-[11px] text-gray-400">{activeClient?.client_id}</p>
                 </div>
               </div>
-              <button
-                onClick={changeClient}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-600 transition border border-gray-200 rounded-lg hover:bg-gray-50"
-              >
-                <FaArrowLeft size={9} /> Change client
-              </button>
+                          <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setPreviewOpen(true)}
+                  title="Preview Create Billing"
+                  className="relative flex items-center justify-center w-8 h-8 text-gray-600 transition border border-gray-200 rounded-lg hover:bg-gray-50 hover:text-blue-600"
+                >
+                  <FaEye size={13} />
+                               {previewCount > 0 && (
+                    <span className="absolute -top-1.5 -right-1.5 min-w-[16px] h-4 px-1 flex items-center justify-center text-[9px] font-bold text-white bg-black rounded-full">
+                      {previewCount}
+                    </span>
+                  )}
+                  {previewWarnCount > 0 && (
+                    <span className="absolute -bottom-1 -right-1 flex items-center justify-center w-3 h-3 text-[8px] font-bold text-black bg-white border border-black rounded-full">
+                      !
+                    </span>
+                  )}
+                
+                </button>
+                <button
+                  onClick={changeClient}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-600 transition border border-gray-200 rounded-lg hover:bg-gray-50"
+                >
+                  <FaArrowLeft size={9} /> Change client
+                </button>
+              </div>
             </div>
+       
 
             {/* LEVEL 1: GROUP TABS (read-only) */}
             <div className="flex flex-wrap items-center gap-2 mb-3">
@@ -838,7 +981,7 @@ const handleSelectRentFee = async (rentFee) => {
             >
               {taxSaving ? <span className="block w-3 h-3 border border-gray-400 rounded-full border-t-transparent animate-spin" /> : <FaCheck size={11} />}
             </button>
-) : !t && coa.billing_mode !== "schedule" && coa.billing_mode !== "contribution" ? (            <>
+                ) : !t && coa.billing_mode !== "schedule" && coa.billing_mode !== "contribution" ? (            <>
               <button onClick={() => handleSaveRow(coa)} disabled={saving} className="p-1.5 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition disabled:opacity-40" title="Save amount">
                 {saving ? <span className="block w-3 h-3 border border-gray-400 rounded-full border-t-transparent animate-spin" /> : <FaCheck size={11} />}
               </button>
@@ -863,7 +1006,169 @@ const handleSelectRentFee = async (rentFee) => {
                   </table>
                 </div>
               )}
-            </div>
+                    </div>
+
+       
+               {/* PREVIEW MODAL: Create Billing */}
+            {previewOpen && (() => {
+              const renderGroup = (title, category) => {
+                const rows = previewRows.filter((r) => r.category === category);
+                const scheds = previewSchedules.filter((s) => s.category === category);
+                if (rows.length === 0 && scheds.length === 0) return null;
+                return (
+                  <div className="border-t border-gray-200 first:border-t-0">
+                    <div className="flex items-center justify-between px-6 py-2 bg-gray-100">
+                      <span className="text-[11px] font-bold tracking-widest text-black uppercase">{title}</span>
+                      <span className="font-mono text-xs font-semibold text-black">
+                        {peso(previewTotals[category])}
+                      </span>
+                    </div>
+
+                    {rows.length > 0 && (
+                      <table className="w-full text-xs">
+                        <thead>
+                          <tr className="text-gray-500 text-[11px] border-b border-gray-200">
+                            <th className="px-6 py-2 font-semibold text-left w-28">Code</th>
+                            <th className="px-3 py-2 font-semibold text-left w-36">Agency</th>
+                            <th className="px-3 py-2 font-semibold text-left">Description</th>
+                            <th className="px-6 py-2 font-semibold text-right w-36">Amount</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100">
+                          {rows.map((r, i) => (
+                            <tr key={i}>
+                              <td className="px-6 py-2 font-mono text-gray-600">{r.code || "—"}</td>
+                              <td className="px-3 py-2 text-gray-600">{r.agency}</td>
+                              <td className="px-3 py-2 text-black">{r.description}</td>
+                              <td className="px-6 py-2 font-mono text-right text-black">
+                                {r.amount === 0 ? <span className="text-gray-400">{peso(r.amount)}</span> : peso(r.amount)}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    )}
+
+                    {scheds.map((acc, idx) => (
+                      <div key={idx} className="px-6 py-3 border-t border-gray-100">
+                        <div className="flex items-center justify-between mb-2">
+                          <p className="text-xs font-semibold text-black">
+                            {acc.description}{" "}
+                            <span className="ml-1 font-normal text-gray-500">({acc.rf_code})</span>
+                          </p>
+                          <span className="font-mono text-xs font-semibold text-black">{peso(acc.total)}</span>
+                        </div>
+                        <table className="w-full text-[11px] border border-gray-200">
+                          <thead>
+                            <tr className="text-gray-500 bg-gray-50">
+                              <th className="px-3 py-1.5 text-left font-semibold">Year</th>
+                              <th className="px-3 py-1.5 text-left font-semibold">Period</th>
+                              <th className="px-3 py-1.5 text-right font-semibold">Net of VAT</th>
+                              <th className="px-3 py-1.5 text-right font-semibold">VAT</th>
+                              <th className="px-3 py-1.5 text-right font-semibold">WTAX</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {acc.details.map((d, i) => (
+                              <tr key={i} className="border-t border-gray-100">
+                                <td className="px-3 py-1.5 font-bold text-black">{d.year}</td>
+                                <td className="px-3 py-1.5 text-gray-600">
+                                  {d.period_start} – {d.period_end}
+                                </td>
+                                <td className="px-3 py-1.5 font-mono text-right">{peso(d.net_of_vat)}</td>
+                                <td className="px-3 py-1.5 font-mono text-right">{peso(d.vat)}</td>
+                                <td className="px-3 py-1.5 font-mono text-right">{peso(d.wtax)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    ))}
+                  </div>
+                );
+              };
+
+              return (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
+                  <div className="flex flex-col w-full max-w-3xl overflow-hidden bg-white border border-gray-300 shadow-xl rounded-xl max-h-[88vh]">
+                    {/* Header */}
+                    <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 shrink-0">
+                      <div>
+                        <h2 className="text-sm font-semibold text-black">Billing Preview</h2>
+                        <p className="text-xs text-gray-500">
+                          {activeClient?.business_name || activeClient?.trade_name} ·{" "}
+                          <span className="font-mono">{activeClient?.client_id}</span> · {previewCount} item
+                          {previewCount !== 1 ? "s" : ""}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <button
+                          onClick={fetchPreview}
+                          disabled={loadingPreview}
+                          className="px-2.5 py-1 text-[11px] font-medium text-black border border-gray-300 rounded-md hover:bg-gray-100 disabled:opacity-40"
+                        >
+                          {loadingPreview ? "Refreshing…" : "Refresh"}
+                        </button>
+                        <button onClick={() => setPreviewOpen(false)} className="text-gray-500 hover:text-black">
+                          <FaTimes size={14} />
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Body */}
+                    <div className="flex-1 overflow-y-auto">
+                                            {previewIssues.length > 0 && (
+                        <div className="px-6 py-3 space-y-1.5 border-b border-gray-200">
+                          <p className="text-[10px] font-bold tracking-widest text-gray-500 uppercase">Checks</p>
+                          {previewIssues.map((iss, i) => (
+                            <div key={i} className="px-3 py-2 text-xs text-black border border-gray-300 rounded-md">
+                              ! {iss.text}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {previewCount === 0 ? (
+                        <div className="py-16 text-center">
+                          <p className="text-sm text-gray-400">No billing items for this client yet</p>
+                        </div>
+                      ) : (
+                        <>
+                          {renderGroup("Income", "income")}
+                          {renderGroup("Remittances", "remittance")}
+                        </>
+                      )}
+                    </div>
+
+                    {/* Footer */}
+                    <div className="px-6 py-4 border-t border-gray-200 bg-gray-50 shrink-0">
+                      <div className="flex items-end justify-between gap-4">
+                        <div className="space-y-1 text-xs text-gray-600">
+                          <div className="flex justify-between gap-8">
+                            <span>Income</span>
+                            <span className="font-mono text-black">{peso(previewTotals.income)}</span>
+                          </div>
+                          <div className="flex justify-between gap-8">
+                            <span>Remittances</span>
+                            <span className="font-mono text-black">{peso(previewTotals.remittance)}</span>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-[10px] font-bold tracking-widest text-gray-500 uppercase">Subtotal</p>
+                          <p className="font-mono text-xl font-bold text-black">{peso(previewTotals.subtotal)}</p>
+                        </div>
+                        <button
+                          onClick={() => setPreviewOpen(false)}
+                          className="px-4 py-2 text-sm font-semibold text-white bg-black rounded-lg hover:bg-gray-800"
+                        >
+                          Close
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
 {taxModalOpen && taxModalTarget && (() => {
   const { coa, t } = taxModalTarget;
   const e = taxEdits[t.tax_type] || {};

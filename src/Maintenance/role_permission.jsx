@@ -23,6 +23,7 @@ export async function loadPermissionsForRole(roleName) {
         canCreate: perm.can_create,
         canEdit:   perm.can_edit,
         canDelete: perm.can_delete,
+        dataScope: perm.data_scope || 'all',   // 'own' | 'all'
       };
     });
 
@@ -61,6 +62,15 @@ export function canApprovePage(roleName, pagePath) {
   if (!cacheLoaded || !permissionsCache[roleName]) return false;
   const rolePerms = permissionsCache[roleName];
   return rolePerms[pagePath]?.canCreate === true;
+}
+
+// 'own' = makikita lang ang isinumite/na-approve ng user, 'all' = lahat
+export function getDataScope(roleName, pagePath) {
+  if (!roleName) return 'own';
+  if (roleName === 'Admin') return 'all';
+  const rolePerms = permissionsCache[roleName];
+  if (!cacheLoaded || !rolePerms) return 'own'; // least privilege kapag wala pang data
+  return rolePerms[pagePath]?.dataScope || 'own';
 }
 
 export function filterMenuByRole(menuItems, roleName) {
@@ -114,19 +124,20 @@ async function syncSidebarPagesToDB(roleName, sidebarPages) {
     if (error) return;
 
     const existingPaths = new Set((existing || []).map(p => p.module_path));
-    const sidebarPaths  = new Set(sidebarPages.map(p => p.path));
 
     // Only insert pages that exist in Sidebar but not yet in DB
     const missing = sidebarPages.filter(p => !existingPaths.has(p.path));
     for (const page of missing) {
-      await rolePermissionAPI.create({
+      const res = await rolePermissionAPI.create({
         role_name:   roleName,
         module_path: page.path,
         can_view:    false,
         can_create:  false,
         can_edit:    false,
         can_delete:  false,
+        data_scope:  'all',
       });
+      if (res?.error) console.error('[RolePermissions] insert failed:', page.path, res.error);
     }
 
     if (missing.length > 0) {
@@ -201,6 +212,7 @@ const RolePermissions = ({ selectedRole, onClose }) => {
 
       const enriched = sorted.map(perm => ({
         ...perm,
+        data_scope: perm.data_scope || 'all',
         label:     pagesMeta[perm.module_path]?.label     || perm.module_path,
         isSubmenu: pagesMeta[perm.module_path]?.isSubmenu || false,
         parent:    pagesMeta[perm.module_path]?.parent    || null,
@@ -227,6 +239,12 @@ const RolePermissions = ({ selectedRole, onClose }) => {
     setPermissions(updated);
   };
 
+  const handleScopeChange = (index, value) => {
+    const updated = [...permissions];
+    updated[index] = { ...updated[index], data_scope: value };
+    setPermissions(updated);
+  };
+
   const handleSave = async () => {
     setIsSaving(true);
     try {
@@ -238,6 +256,7 @@ const RolePermissions = ({ selectedRole, onClose }) => {
           can_create:  perm.can_create,
           can_edit:    perm.can_edit,
           can_delete:  perm.can_delete,
+          data_scope:  perm.data_scope || 'all',
         };
         const result = perm.id
           ? await rolePermissionAPI.update(perm.id, payload)
@@ -362,6 +381,18 @@ const RolePermissions = ({ selectedRole, onClose }) => {
                         {perm.parent && (
                           <div className="text-[11px] text-gray-400 mt-0.5">{perm.parent}</div>
                         )}
+
+                        {/* Data scope — Dashboard lang */}
+                        {perm.module_path === 'dashboard' && (
+                          <select
+                            value={perm.data_scope || 'all'}
+                            onChange={e => handleScopeChange(idx, e.target.value)}
+                            className="mt-1.5 px-2 py-1 text-[11px] text-gray-600 bg-white border border-gray-200 rounded-md focus:outline-none focus:border-gray-400"
+                          >
+                            <option value="all">Data: All records</option>
+                            <option value="own">Data: Own only (submitted & approved by me)</option>
+                          </select>
+                        )}
                       </div>
                     </div>
 
@@ -390,7 +421,7 @@ const RolePermissions = ({ selectedRole, onClose }) => {
               {/* Footer */}
               <div className="flex items-center justify-between px-6 py-4 border-t border-gray-100 bg-gray-50/50">
                 <p className="text-xs text-gray-400">
-                  {permissions.length} {permissions.length === 1 ? 'page' : 'pages'} · changes apply on next login
+                  {permissions.length} {permissions.length === 1 ? 'page' : 'pages'} · changes apply on next refresh or login
                 </p>
                 <div className="flex items-center gap-2">
                   <button

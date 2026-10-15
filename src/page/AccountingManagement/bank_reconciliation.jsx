@@ -356,6 +356,7 @@ function TransactionsModal({
 }
 
 // ── Adjustments modal — manages bank_reconciliation_adjustments rows ──
+
 function AdjustmentsModal({
   rows,
   onAdd,
@@ -490,8 +491,15 @@ function AdjustmentsModal({
     </div>
   );
 }
+
 // ── Formatted number input — shows thousand separators, stores raw number ──
-function FormattedNumberInput({ value, onChange, onBlurCommit, disabled, className }) {
+function FormattedNumberInput({
+  value,
+  onChange,
+  onBlurCommit,
+  disabled,
+  className,
+}) {
   const [displayValue, setDisplayValue] = useState("");
   const [focused, setFocused] = useState(false);
 
@@ -610,11 +618,11 @@ export default function BankReconciliation({ currentUser }) {
         setReconciliationId(recon.id);
         setBankName(recon.bank_name || bankName);
         setAccountNo(recon.account_no || accountNo);
-   setBeginningBalance(recon.beginning_balance || 0);
+        setBeginningBalance(recon.beginning_balance || 0);
         setTotalPaymentsManual(recon.total_payments || 0);
         setBankStatementBalance(recon.bank_statement_balance || 0);
         setTotalDepositsNotPosted(recon.total_deposits_not_posted || 0);
-  setTotalUnpresentedCheques(recon.total_unpresented_cheques || 0);
+        setTotalUnpresentedCheques(recon.total_unpresented_cheques || 0);
         setTotalOutstandingDeposits(recon.total_outstanding_deposits || 0);
         setAdjustmentsManual(recon.adjustments || 0);
         setNotes(recon.notes || "");
@@ -638,12 +646,12 @@ export default function BankReconciliation({ currentUser }) {
         if (adjErr) throw adjErr;
         setAdjustmentsList(adjs || []);
       } else {
-      setReconciliationId(null);
+        setReconciliationId(null);
         setBeginningBalance(0);
         setBankStatementBalance(0);
         setTotalPaymentsManual(0);
         setTotalDepositsNotPosted(0);
-    setTotalUnpresentedCheques(0);
+        setTotalUnpresentedCheques(0);
         setTotalOutstandingDeposits(0);
         setAdjustmentsManual(0);
         setNotes("");
@@ -682,7 +690,7 @@ export default function BankReconciliation({ currentUser }) {
             );
           }
 
-           // ── Auto-carry-forward ng ending Cash Book Balance ──
+          // ── Auto-carry-forward ng ending Cash Book Balance ──
           // NOTE: dapat tugma ang filter dito sa ginagamit ng fetchTotalReceipts()
           // (bank_transfer, cash, cheque lahat kasama), para hindi magkaiba ang
           // Beginning Balance na naka-carry-forward vs ang aktwal na na-record na
@@ -725,7 +733,7 @@ export default function BankReconciliation({ currentUser }) {
   }, [loadReconciliation]);
 
   // ── Computed totals — see docblock above for the derivation rules ──
- // ── Total Receipts — auto, straight from official_receipts (Record Payment).
+  // ── Total Receipts — auto, straight from official_receipts (Record Payment).
   // Any payment method (cash, cheque, bank_transfer) counts once it's been
   // physically deposited (deposit_status: "deposited") for this bank + day.
   const [totalReceipts, setTotalReceipts] = useState(0);
@@ -747,10 +755,7 @@ export default function BankReconciliation({ currentUser }) {
         .eq("deposited_date", statementDate)
         .eq("deposit_status", "deposited");
       if (error) throw error;
-      const total = (data || []).reduce(
-        (s, r) => s + Number(r.amount || 0),
-        0,
-      );
+      const total = (data || []).reduce((s, r) => s + Number(r.amount || 0), 0);
       setTotalReceipts(total);
     } catch (err) {
       console.error("fetchTotalReceipts error:", err);
@@ -760,10 +765,9 @@ export default function BankReconciliation({ currentUser }) {
     }
   }, [bankName, statementDate]);
 
-    useEffect(() => {
+  useEffect(() => {
     fetchTotalReceipts();
   }, [fetchTotalReceipts]);
-  
 
   const cashBookBalance = useMemo(
     () =>
@@ -772,7 +776,7 @@ export default function BankReconciliation({ currentUser }) {
       Number(totalPaymentsManual || 0),
     [beginningBalance, totalReceipts, totalPaymentsManual],
   );
-const adjustedBankTotal = useMemo(
+  const adjustedBankTotal = useMemo(
     () =>
       Number(bankStatementBalance) -
       Number(totalUnpresentedCheques || 0) +
@@ -968,7 +972,7 @@ const adjustedBankTotal = useMemo(
 
       const { month, year } = monthYearFromDate(statementDate);
 
-    const payload = {
+      const payload = {
         bank_name: bankName,
         account_no: accountNo || null,
         month,
@@ -978,7 +982,7 @@ const adjustedBankTotal = useMemo(
         bank_statement_balance: Number(bankStatementBalance) || 0,
         total_payments: Number(totalPaymentsManual) || 0,
         total_deposits_not_posted: Number(totalDepositsNotPosted) || 0,
-total_unpresented_cheques: Number(totalUnpresentedCheques) || 0,
+        total_unpresented_cheques: Number(totalUnpresentedCheques) || 0,
         total_outstanding_deposits: Number(totalOutstandingDeposits) || 0,
         adjustments: Number(adjustmentsManual) || 0,
         notes: notes || null,
@@ -1404,7 +1408,7 @@ total_unpresented_cheques: Number(totalUnpresentedCheques) || 0,
                   <span className={labelCls}>
                     Cash book balance brought forward
                   </span>
-          <FormattedNumberInput
+                  <FormattedNumberInput
                     value={beginningBalance}
                     onChange={setBeginningBalance}
                     onBlurCommit={() => setBeginningBalance(0)}
@@ -1420,7 +1424,7 @@ total_unpresented_cheques: Number(totalUnpresentedCheques) || 0,
                 </div>
                 <div className="flex items-center justify-between gap-4">
                   <span className={labelCls}>Total Payments</span>
-          <FormattedNumberInput
+                  <FormattedNumberInput
                     value={totalPaymentsManual}
                     onChange={setTotalPaymentsManual}
                     onBlurCommit={() => setTotalPaymentsManual(0)}
@@ -1456,7 +1460,7 @@ total_unpresented_cheques: Number(totalUnpresentedCheques) || 0,
               <div className="space-y-2.5">
                 <div className="flex items-center justify-between gap-4">
                   <span className={labelCls}>Balance from bank statement</span>
-           <FormattedNumberInput
+                  <FormattedNumberInput
                     value={bankStatementBalance}
                     onChange={setBankStatementBalance}
                     onBlurCommit={() => setBankStatementBalance(0)}
@@ -1464,7 +1468,7 @@ total_unpresented_cheques: Number(totalUnpresentedCheques) || 0,
                   />
                 </div>
 
-      <div className="flex items-center justify-between gap-4">
+                <div className="flex items-center justify-between gap-4">
                   <span className={labelCls}>Total unpresented cheques</span>
                   <FormattedNumberInput
                     value={totalUnpresentedCheques}
@@ -1476,7 +1480,7 @@ total_unpresented_cheques: Number(totalUnpresentedCheques) || 0,
                 </div>
                 <div className="flex items-center justify-between gap-4">
                   <span className={labelCls}>Total outstanding deposits</span>
-               <FormattedNumberInput
+                  <FormattedNumberInput
                     value={totalOutstandingDeposits}
                     onChange={setTotalOutstandingDeposits}
                     onBlurCommit={() => setTotalOutstandingDeposits(0)}
@@ -1488,14 +1492,14 @@ total_unpresented_cheques: Number(totalUnpresentedCheques) || 0,
                   <span className={labelCls}>
                     Total deposits banked not posted
                   </span>
-             <FormattedNumberInput
+                  <FormattedNumberInput
                     value={totalDepositsNotPosted}
                     onChange={setTotalDepositsNotPosted}
                     onBlurCommit={() => setTotalDepositsNotPosted(0)}
                     className="w-40 px-3 py-2 font-mono text-sm text-right border border-gray-200 rounded-md focus:outline-none focus:border-blue-400"
                   />
                 </div>
-            <div className="flex items-center justify-between gap-4">
+                <div className="flex items-center justify-between gap-4">
                   <span className={labelCls}>Adjustments</span>
                   <FormattedNumberInput
                     value={adjustmentsManual}
@@ -1567,7 +1571,7 @@ total_unpresented_cheques: Number(totalUnpresentedCheques) || 0,
           </div>
         </div>
 
-          {/* RIGHT — action rail */}
+        {/* RIGHT — action rail */}
         <div className="space-y-2.5 lg:col-span-1">
           <RailButton
             icon={<FaTimes size={13} />}
@@ -1597,13 +1601,7 @@ total_unpresented_cheques: Number(totalUnpresentedCheques) || 0,
             onClick={openTxnModal}
             disabled={isReconciled}
           />
-          <RailButton
-            icon={<FaMoneyCheckAlt size={13} />}
-            label="Adjustments"
-            hint="F5"
-            onClick={openAdjModal}
-            disabled={isReconciled}
-          />
+
           <RailButton
             icon={<FaCheckCircle size={13} />}
             label="OK"

@@ -17,14 +17,14 @@ import CustomerMaintenanceTable, {
 const fmtPeso = (n) =>
   `₱${Number(n).toLocaleString("en-PH", { minimumFractionDigits: 2 })}`;
 const fmtPct = (n) => `${(Number(n) * 100).toFixed(2)}%`;
+
 const FieldLabel = ({ main, hint }) => (
   <span className="inline-flex flex-wrap items-baseline gap-1">
-    <span className="font-medium text-gray-700">{main}</span>
-    {hint && (
-      <span className="text-xs font-normal text-gray-400">({hint})</span>
-    )}
+    <span>{main}</span>
+    {hint && <span className="font-normal text-gray-400">({hint})</span>}
   </span>
 );
+
 // Fallback lang ito kung walang laman ang sss_rate_settings sa DB —
 // dapat hindi ito umabot sa production, pero safety net kung sakaling
 // hindi pa na-seed yung table.
@@ -169,7 +169,7 @@ export default function SSSTableSetup() {
     if (activateError) {
       showToast(`Failed to activate: ${activateError.message}`, "error");
     } else {
-      showToast("Rate schedule activated!");
+      showToast("Rate schedule activated.");
       await fetchRates();
       await fetchRateHistory();
     }
@@ -191,7 +191,7 @@ export default function SSSTableSetup() {
     if (error) {
       showToast(`Failed to delete rate schedule: ${error.message}`, "error");
     } else {
-      showToast("Rate schedule deleted!");
+      showToast("Rate schedule deleted.");
       await fetchRateHistory();
     }
 
@@ -315,7 +315,7 @@ export default function SSSTableSetup() {
         .eq("id", editTarget.id);
       if (error) showToast(`Update failed: ${error.message}`, "error");
       else {
-        showToast("Bracket updated!");
+        showToast("Bracket updated.");
         fetchBrackets();
       }
     } else {
@@ -324,7 +324,7 @@ export default function SSSTableSetup() {
         .insert(payload);
       if (error) showToast(`Insert failed: ${error.message}`, "error");
       else {
-        showToast("Bracket added!");
+        showToast("Bracket added.");
         fetchBrackets();
       }
     }
@@ -341,7 +341,7 @@ export default function SSSTableSetup() {
       .eq("id", deleteTarget.id);
     if (error) showToast("Delete failed.", "error");
     else {
-      showToast("Bracket deleted!");
+      showToast("Bracket deleted.");
       fetchBrackets();
     }
     setDeleteLoading(false);
@@ -408,7 +408,7 @@ export default function SSSTableSetup() {
       showToast(`Failed to save new rates: ${insertError.message}`, "error");
     } else {
       showToast(
-        "SSS rates updated! This will now be used for auto-compute going forward.",
+        "SSS rates updated. This will now be used for auto-compute going forward.",
       );
       await fetchRates();
       if (historyOpen) await fetchRateHistory();
@@ -430,14 +430,15 @@ export default function SSSTableSetup() {
 
   return (
     <>
-      <div className="flex items-center justify-between mb-2">
-        <div className="text-sm text-gray-500">
+      {/* Current rates + rate actions */}
+      <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 mb-4 bg-white border border-gray-200 rounded-lg">
+        <div className="text-sm text-gray-600">
           {!ratesLoading && (
             <>
-              Current rates: EE {fmtPct(rates.ee_rate)} · ER{" "}
-              {fmtPct(rates.er_rate)} · EC {fmtPeso(rates.ec_low)} (below{" "}
-              {fmtPeso(rates.ec_threshold_msc)}) / {fmtPeso(rates.ec_high)} (at
-              or above)
+              <span className="font-medium text-gray-800">Current rates:</span>{" "}
+              EE {fmtPct(rates.ee_rate)} · ER {fmtPct(rates.er_rate)} · EC{" "}
+              {fmtPeso(rates.ec_low)} (below {fmtPeso(rates.ec_threshold_msc)}) /{" "}
+              {fmtPeso(rates.ec_high)} (at or above)
             </>
           )}
         </div>
@@ -445,47 +446,47 @@ export default function SSSTableSetup() {
           <button
             type="button"
             onClick={toggleHistory}
-            className="flex items-center gap-1.5 text-sm text-gray-600 hover:text-gray-800 font-medium"
+            className="flex items-center gap-1.5 text-sm font-medium text-gray-600 transition hover:text-black"
           >
-            <History size={16} />
+            <History size={15} />
             Rate History
             {historyOpen ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
           </button>
           <button
             type="button"
             onClick={openRateSettings}
-            className="flex items-center gap-1.5 text-sm text-blue-600 hover:text-blue-800 font-medium"
+            className="flex items-center gap-1.5 text-sm font-medium text-gray-600 transition hover:text-black"
           >
-            <Settings size={16} />
+            <Settings size={15} />
             Edit SSS Rates
           </button>
         </div>
       </div>
 
       {historyOpen && (
-        <div className="mb-4 overflow-hidden border border-gray-200 rounded-lg">
+        <div className="mb-4 overflow-hidden bg-white border border-gray-200 rounded-lg">
           {historyLoading ? (
-            <div className="p-4 text-sm text-gray-500">
-              Loading rate history...
+            <div className="py-10 text-sm text-center text-gray-400">
+              Loading...
             </div>
           ) : rateHistory.length === 0 ? (
-            <div className="p-4 text-sm text-gray-500">
+            <div className="py-10 text-sm text-center text-gray-400">
               No rate history found.
             </div>
           ) : (
             <table className="w-full text-sm">
-              <thead className="text-xs text-gray-500 uppercase bg-gray-50">
+              <thead className="border-b border-gray-100 bg-gray-50">
                 <tr>
-                  <th className="px-3 py-2 text-left">Status</th>
-                  <th className="px-3 py-2 text-left">Effective Date</th>
-                  <th className="px-3 py-2 text-left">EE Rate</th>
-                  <th className="px-3 py-2 text-left">ER Rate</th>
-                  <th className="px-3 py-2 text-left">EC Threshold (MSC)</th>
-                  <th className="px-3 py-2 text-left">EC Low / High</th>
-                  <th className="px-3 py-2 text-right">Action</th>
+                  <th className="px-4 py-2.5 text-xs font-medium text-left text-gray-500">Status</th>
+                  <th className="px-4 py-2.5 text-xs font-medium text-left text-gray-500">Effective Date</th>
+                  <th className="px-4 py-2.5 text-xs font-medium text-left text-gray-500">EE Rate</th>
+                  <th className="px-4 py-2.5 text-xs font-medium text-left text-gray-500">ER Rate</th>
+                  <th className="px-4 py-2.5 text-xs font-medium text-left text-gray-500">EC Threshold (MSC)</th>
+                  <th className="px-4 py-2.5 text-xs font-medium text-left text-gray-500">EC Low / High</th>
+                  <th className="px-4 py-2.5 text-xs font-medium text-right text-gray-500">Action</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-100">
+              <tbody>
                 {rateHistory.map((r) => (
                   <tr
                     key={r.id}
@@ -494,26 +495,32 @@ export default function SSSTableSetup() {
                         ? `Currently active since ${r.effective_date}`
                         : `Was active until it was replaced. Effective date on record: ${r.effective_date}`
                     }
-                    className={r.is_active ? "bg-green-50/50" : ""}
+                    className="border-t border-gray-100 hover:bg-gray-50"
                   >
-                    <td className="px-3 py-2">
+                    <td className="px-4 py-3">
                       {r.is_active ? (
-                        <span className="inline-flex items-center gap-1 font-medium text-green-700">
-                          <CheckCircle2 size={14} />
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium text-white bg-gray-900 rounded">
+                          <CheckCircle2 size={12} />
                           Active
                         </span>
                       ) : (
-                        <span className="text-gray-400">Inactive</span>
+                        <span className="px-2 py-0.5 text-xs font-medium text-gray-500 bg-gray-100 rounded">
+                          Inactive
+                        </span>
                       )}
                     </td>
-                    <td className="px-3 py-2">{r.effective_date}</td>
-                    <td className="px-3 py-2">{fmtPct(r.ee_rate)}</td>
-                    <td className="px-3 py-2">{fmtPct(r.er_rate)}</td>
-                    <td className="px-3 py-2">{fmtPeso(r.ec_threshold_msc)}</td>
-                    <td className="px-3 py-2">
+                    <td className="px-4 py-3">
+                      <span className="px-2 py-0.5 font-mono text-xs text-gray-600 bg-gray-100 rounded">
+                        {r.effective_date}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-gray-800">{fmtPct(r.ee_rate)}</td>
+                    <td className="px-4 py-3 text-gray-800">{fmtPct(r.er_rate)}</td>
+                    <td className="px-4 py-3 text-gray-800">{fmtPeso(r.ec_threshold_msc)}</td>
+                    <td className="px-4 py-3 text-gray-800">
                       {fmtPeso(r.ec_low)} / {fmtPeso(r.ec_high)}
                     </td>
-                    <td className="px-3 py-2 text-right">
+                    <td className="px-4 py-3">
                       <div className="flex items-center justify-end gap-3">
                         {!r.is_active && (
                           <button
@@ -521,11 +528,9 @@ export default function SSSTableSetup() {
                             onClick={() => handleActivateRate(r)}
                             disabled={activatingId === r.id}
                             title="Reactivate this rate schedule — it will become the current active rate used for auto-compute"
-                            className="text-xs font-medium text-blue-600 hover:text-blue-800 disabled:opacity-50"
+                            className="text-xs font-medium text-gray-500 underline transition hover:text-black disabled:opacity-50"
                           >
-                            {activatingId === r.id
-                              ? "Activating..."
-                              : "Activate"}
+                            {activatingId === r.id ? "Activating..." : "Activate"}
                           </button>
                         )}
                         {!r.is_active && (
@@ -533,7 +538,7 @@ export default function SSSTableSetup() {
                             type="button"
                             onClick={() => setDeleteRateTarget(r)}
                             title="Permanently delete this rate schedule"
-                            className="text-xs font-medium text-red-600 hover:text-red-800"
+                            className="text-xs font-medium text-red-600 underline transition hover:text-red-800"
                           >
                             Delete
                           </button>
@@ -550,7 +555,7 @@ export default function SSSTableSetup() {
 
       <CustomerMaintenanceTable
         title="SSS Bracket Table"
-        icon={<Table2 size={22} className="text-blue-600" />}
+        icon={<Table2 size={26} strokeWidth={1.5} className="text-black" />}
         totalCount={brackets.length}
         search={search}
         onSearchChange={setSearch}
@@ -573,6 +578,7 @@ export default function SSSTableSetup() {
       <MaintenanceModal
         open={modalOpen}
         title={editTarget ? "Edit Bracket" : "Add Bracket"}
+        subtitle={editTarget ? "Update this bracket." : "Create a new bracket."}
         onClose={() => setModalOpen(false)}
         onSubmit={handleSubmit}
         loading={loading}
@@ -633,6 +639,7 @@ export default function SSSTableSetup() {
       <MaintenanceModal
         open={rateModalOpen}
         title="Edit SSS Contribution Rates"
+        subtitle="Saving creates a new active rate schedule."
         onClose={() => setRateModalOpen(false)}
         onSubmit={handleRateSubmit}
         loading={rateSaving}
@@ -694,6 +701,8 @@ export default function SSSTableSetup() {
         onClose={() => setDeleteTarget(null)}
         onConfirm={handleDelete}
         loading={deleteLoading}
+        title="Delete bracket?"
+        name={deleteTarget?.range_display}
       />
 
       <DeleteModal
@@ -701,7 +710,14 @@ export default function SSSTableSetup() {
         onClose={() => setDeleteRateTarget(null)}
         onConfirm={handleDeleteRate}
         loading={deleteRateLoading}
+        title="Delete rate schedule?"
+        name={
+          deleteRateTarget
+            ? `Effective ${deleteRateTarget.effective_date} · EE ${fmtPct(deleteRateTarget.ee_rate)} / ER ${fmtPct(deleteRateTarget.er_rate)}`
+            : undefined
+        }
       />
+
       <Toast msg={toast.msg} type={toast.type} />
     </>
   );

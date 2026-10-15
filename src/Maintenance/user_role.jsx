@@ -1,361 +1,301 @@
 import React, { useState, useEffect } from "react";
-import {
-  FaPlus,
-  FaEdit,
-  FaTrash,
-  FaShieldAlt,
-  FaTimes,
-  FaSync,
-  FaSave,
-  FaArrowLeft,
-  FaUserShield,
-  FaToggleOn,
-  FaToggleOff,
-} from "react-icons/fa";
+import { Plus, Pencil, Trash2, X, Check, Search, UserCog, ShieldCheck, AlertTriangle } from "lucide-react";
 import { userRoleAPI } from "../lib/supabaseClient";
-import Swal from "sweetalert2";
 
+/* ── Shared look (same block is used in secret_question / user_role / status) ── */
+const inputCls   = "w-full px-3 py-2 text-sm bg-white border border-gray-200 rounded-md focus:outline-none focus:border-gray-400 focus:ring-1 focus:ring-gray-200";
+const labelCls   = "block mb-1 text-xs font-medium text-gray-500";
+const btnPrimary = "flex items-center gap-2 px-3.5 py-2 text-sm font-medium text-white transition bg-gray-900 rounded-md hover:bg-black disabled:opacity-50";
+const btnGhost   = "px-3.5 py-2 text-sm font-medium text-gray-600 transition bg-white border border-gray-200 rounded-md hover:bg-gray-50 disabled:opacity-50";
+const btnDanger  = "flex items-center gap-2 px-3.5 py-2 text-sm font-medium text-white transition bg-red-600 rounded-md hover:bg-red-700 disabled:opacity-50";
+const iconBtn    = "p-1.5 text-gray-400 transition rounded-md hover:bg-gray-100 hover:text-black";
+
+const Toast = ({ toast }) =>
+  toast && (
+    <div
+      className={`fixed z-50 flex items-center gap-2 px-4 py-2.5 text-sm font-medium bg-white border rounded-md shadow-lg bottom-6 right-6 ${
+        toast.type === "error" ? "text-red-700 border-red-200" : "text-gray-800 border-gray-200"
+      }`}
+    >
+      {toast.type === "error" ? <AlertTriangle size={14} /> : <Check size={14} />}
+      {toast.msg}
+    </div>
+  );
+
+const Modal = ({ title, subtitle, onClose, children }) => (
+  <div
+    className="fixed inset-0 z-40 flex items-center justify-center p-4 bg-black/40"
+    onClick={(e) => e.target === e.currentTarget && onClose()}
+  >
+    <div className="w-full max-w-md bg-white border border-gray-200 rounded-lg shadow-xl">
+      <div className="flex items-start justify-between px-6 pt-5">
+        <div>
+          <h2 className="text-base font-semibold text-gray-800">{title}</h2>
+          {subtitle && <p className="mt-0.5 text-xs text-gray-500">{subtitle}</p>}
+        </div>
+        <button type="button" onClick={onClose} className={iconBtn}>
+          <X size={16} />
+        </button>
+      </div>
+      <div className="px-6 py-5">{children}</div>
+    </div>
+  </div>
+);
+
+const ConfirmDelete = ({ title, name, saving, onCancel, onConfirm }) => (
+  <Modal title={title} subtitle="This action cannot be undone." onClose={onCancel}>
+    <p className="px-3 py-2 mb-5 text-sm text-gray-700 border border-gray-200 rounded-md bg-gray-50">{name}</p>
+    <div className="flex justify-end gap-2">
+      <button onClick={onCancel} disabled={saving} className={btnGhost}>Cancel</button>
+      <button onClick={onConfirm} disabled={saving} className={btnDanger}>
+        {saving ? "Deleting..." : <><Trash2 size={14} /> Delete</>}
+      </button>
+    </div>
+  </Modal>
+);
+
+/* ════════════════════════════ */
 function UserRole({ onManagePermissions }) {
   const [roles, setRoles] = useState([]);
-  const [isLoading, setIsLoading] = useState(false);
-  const [showModal, setShowModal] = useState(false);
-  const [modalMode, setModalMode] = useState("add"); // 'add' | 'edit'
-  const [selectedRole, setSelectedRole] = useState(null);
-  const [formData, setFormData] = useState({
-    roleName: "",
-    status: true, // boolean: true = Active, false = Inactive
-  });
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState("");
+
+  const [modal, setModal] = useState(null); // null | "add" | "edit" | "delete"
+  const [activeRow, setActiveRow] = useState(null);
+  const [formName, setFormName] = useState("");
+  const [formStatus, setFormStatus] = useState(true); // true = Active
   const [formError, setFormError] = useState("");
+  const [saving, setSaving] = useState(false);
 
-  useEffect(() => {
-    loadRoles();
-  }, []);
+  const [toast, setToast] = useState(null);
+  const showToast = (msg, type = "success") => {
+    setToast({ msg, type });
+    setTimeout(() => setToast(null), 3000);
+  };
 
+  /* ── Fetch ── */
   const loadRoles = async () => {
-    setIsLoading(true);
+    setLoading(true);
     try {
       const { data, error } = await userRoleAPI.getAll();
-
-      // ✅ FIX: Filter by boolean status, not string
-      if (data) {
-        console.log("Loaded roles:", data); // Debug log
-        setRoles(data); // Show all roles OR filter by: data.filter(r => r.status === true)
+      if (error) {
+        console.error("Error loading roles:", error);
+        showToast("Failed to load roles.", "error");
       }
-
-      if (error) console.error("Error loading roles:", error);
+      if (data) setRoles(data);
     } catch (err) {
       console.error("Error:", err);
+      showToast("Failed to load roles.", "error");
     } finally {
-      setIsLoading(false);
+      setLoading(false);
     }
   };
 
-  const openModal = (mode, role = null) => {
-    setModalMode(mode);
-    setSelectedRole(role);
-    setFormError("");
-    if (mode === "add") {
-      setFormData({ roleName: "", status: true });
-    } else if (role) {
-      setFormData({
-        roleName: role.role_name,
-        status: role.status, // already boolean from DB
-      });
-    }
-    setShowModal(true);
+  useEffect(() => { loadRoles(); }, []);
+
+  const filtered = roles.filter((r) =>
+    (r.role_name || "").toLowerCase().includes(search.toLowerCase())
+  );
+
+  /* ── Modal helpers ── */
+  const openAdd = () => {
+    setFormName(""); setFormStatus(true); setFormError(""); setModal("add");
+  };
+  const openEdit = (role) => {
+    setActiveRow(role);
+    setFormName(role.role_name);
+    setFormStatus(role.status); // boolean from DB
+    setFormError(""); setModal("edit");
+  };
+  const openDelete = (role) => { setActiveRow(role); setModal("delete"); };
+  const closeModal = () => {
+    setModal(null); setActiveRow(null);
+    setFormName(""); setFormStatus(true); setFormError("");
   };
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setFormError("");
+  /* ── CRUD ── */
+  const handleSubmit = async () => {
+    if (!formName.trim()) { setFormError("Role name is required."); return; }
+    const payload = { roleName: formName.trim(), status: formStatus };
 
-    if (!formData.roleName.trim()) {
-      setFormError("Role name is required.");
-      return;
-    }
-
-    setIsLoading(true);
+    setSaving(true);
     try {
       const result =
-        modalMode === "add"
-          ? await userRoleAPI.create(formData)
-          : await userRoleAPI.update(selectedRole.id, formData);
+        modal === "add"
+          ? await userRoleAPI.create(payload)
+          : await userRoleAPI.update(activeRow.id, payload);
 
       if (result.error) {
-        setFormError(result.error);
+        setFormError(String(result.error.message || result.error));
       } else {
+        showToast(`Role ${modal === "add" ? "created" : "updated"}.`);
+        closeModal();
         await loadRoles();
-        setShowModal(false);
-        Swal.fire({
-          icon: "success",
-          title: "Success!",
-          text: `Role ${modalMode === "add" ? "created" : "updated"} successfully!`,
-          timer: 2000,
-          showConfirmButton: false,
-        });
       }
     } catch (err) {
       setFormError("An error occurred. Please try again.");
     } finally {
-      setIsLoading(false);
+      setSaving(false);
     }
   };
 
-  const handleDelete = async (role) => {
-    const result = await Swal.fire({
-      title: "Delete Role",
-      text: `Are you sure you want to delete "${role.role_name}"? This cannot be undone.`,
-      icon: "warning",
-      showCancelButton: true,
-      confirmButtonColor: "#dc2626",
-      cancelButtonColor: "#6b7280",
-      confirmButtonText: "Yes, delete it!",
-    });
-
-    if (result.isConfirmed) {
-      setIsLoading(true);
-      try {
-        const { error } = await userRoleAPI.delete(role.id);
-        if (error) {
-          Swal.fire("Error!", error, "error");
-        } else {
-          await loadRoles();
-          Swal.fire("Deleted!", "Role has been deleted.", "success");
-        }
-      } catch (err) {
-        Swal.fire("Error!", "An error occurred.", "error");
-      } finally {
-        setIsLoading(false);
-      }
-    }
-  };
-
-  const handleToggleStatus = async (role) => {
-    const newStatus = !role.status; // Toggle boolean
+  const handleDelete = async () => {
+    setSaving(true);
     try {
-      const { error } = await userRoleAPI.update(role.id, {
-        roleName: role.role_name,
-        status: newStatus,
-      });
-      if (!error) {
-        await loadRoles();
+      const { error } = await userRoleAPI.delete(activeRow.id);
+      if (error) {
+        showToast(String(error.message || error), "error");
       } else {
-        Swal.fire("Error!", error, "error");
+        showToast("Role deleted.");
+        closeModal();
+        await loadRoles();
       }
     } catch (err) {
-      Swal.fire("Error!", "An error occurred.", "error");
+      showToast("An error occurred.", "error");
+    } finally {
+      setSaving(false);
     }
   };
 
-  // Convert boolean status to display text and color
-  const getStatusDisplay = (status) => {
-    return status ? "Active" : "Inactive";
-  };
-
-  const statusColor = (status) =>
-    status ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700";
-
+  /* ════════════ RENDER ════════════ */
   return (
-    <div className="max-w-5xl px-6 mx-auto">
+    <div>
+      <Toast toast={toast} />
+
       {/* Header */}
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h2 className="text-3xl font-bold text-blue-600">Role Management</h2>
-          <p className="mt-1 text-sm text-gray-500">
-            Manage user roles and their permissions.
-          </p>
+      <div className="flex flex-wrap items-center justify-between gap-4 mb-5">
+        <div className="flex items-center gap-3">
+          <UserCog size={26} strokeWidth={1.5} className="text-black" />
+          <div>
+            <h2 className="text-lg font-semibold text-gray-800">User Role</h2>
+            <p className="text-xs text-gray-500">
+              {roles.length} role{roles.length !== 1 ? "s" : ""} configured
+            </p>
+          </div>
         </div>
-        <button
-          onClick={() => openModal("add")}
-          className="flex items-center gap-2 px-4 py-2.5 text-white bg-blue-600 rounded-lg hover:bg-blue-700 font-semibold"
-        >
-          <FaPlus /> Add Role
+        <button onClick={openAdd} className={btnPrimary}>
+          <Plus size={14} /> Add Role
         </button>
       </div>
 
-      {/* Roles Table */}
-      {isLoading && roles.length === 0 ? (
-        <div className="flex items-center justify-center py-20">
-          <FaSync className="mr-3 text-3xl text-blue-600 animate-spin" />
-          <span className="text-lg text-gray-600">Loading roles...</span>
-        </div>
-      ) : (
-        <div className="overflow-hidden bg-white border border-gray-200 rounded-lg shadow-sm">
-          <table className="w-full text-sm">
-            <thead className="border-b border-gray-200 bg-gray-50">
+      {/* Search */}
+      <div className="relative max-w-sm mb-4">
+        <Search size={14} className="absolute text-gray-300 -translate-y-1/2 pointer-events-none left-3 top-1/2" />
+        <input
+          type="text"
+          placeholder="Search roles..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className={`${inputCls} pl-9`}
+        />
+      </div>
+
+      {/* Table */}
+      <div className="overflow-hidden bg-white border border-gray-200 rounded-lg">
+        <table className="w-full text-sm">
+          <thead className="border-b border-gray-100 bg-gray-50">
+            <tr>
+              <th className="px-4 py-2.5 text-xs font-medium text-left text-gray-500">Role Name</th>
+              <th className="px-4 py-2.5 text-xs font-medium text-left text-gray-500">Status</th>
+              <th className="px-4 py-2.5 text-xs font-medium text-right text-gray-500">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {loading ? (
+              <tr><td colSpan={3} className="py-12 text-center text-gray-400">Loading...</td></tr>
+            ) : filtered.length === 0 ? (
               <tr>
-                <th className="px-6 py-3 font-semibold text-left text-gray-700">
-                  Role Name
-                </th>
-                <th className="px-6 py-3 font-semibold text-center text-gray-700">
-                  Status
-                </th>
-                <th className="px-6 py-3 font-semibold text-center text-gray-700">
-                  Actions
-                </th>
+                <td colSpan={3} className="py-12 text-center text-gray-400">
+                  {search ? "No roles match your search." : "No roles yet."}
+                </td>
               </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {roles.length === 0 ? (
-                <tr>
-                  <td colSpan={3} className="py-12 text-center text-gray-400">
-                    No roles found. Click "Add Role" to create one.
+            ) : (
+              filtered.map((role) => (
+                <tr key={role.id} className="border-t border-gray-100 hover:bg-gray-50">
+                  <td className="px-4 py-3 font-medium text-gray-800">{role.role_name}</td>
+                  <td className="px-4 py-3">
+                    <span className="inline-flex items-center gap-1.5 text-xs text-gray-600">
+                      <span className={`w-1.5 h-1.5 rounded-full ${role.status ? "bg-green-500" : "bg-gray-300"}`} />
+                      {role.status ? "Active" : "Inactive"}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="flex items-center justify-end gap-1">
+                      <button
+                        onClick={() => onManagePermissions && onManagePermissions(role)}
+                        title="Manage permissions"
+                        className={iconBtn}
+                      >
+                        <ShieldCheck size={15} />
+                      </button>
+                      <button onClick={() => openEdit(role)} title="Edit" className={iconBtn}><Pencil size={15} /></button>
+                      <button onClick={() => openDelete(role)} title="Delete" className={iconBtn}><Trash2 size={15} /></button>
+                    </div>
                   </td>
                 </tr>
-              ) : (
-                roles.map((role) => (
-                  <tr
-                    key={role.id}
-                    className="transition-colors hover:bg-gray-50"
-                  >
-                    <td className="px-6 py-4">
-                      <div className="flex items-center gap-2">
-                        <FaUserShield className="text-blue-400" />
-                        <span className="font-semibold text-gray-800">
-                          {role.role_name}
-                        </span>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 text-center">
-                      <span
-                        className={`inline-block px-3 py-1 text-xs font-semibold rounded-full ${statusColor(role.status)}`}
-                      >
-                        {getStatusDisplay(role.status)}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="flex items-center justify-center gap-2">
-                        {/* Toggle Status */}
-                        {/* <button
-                          onClick={() => handleToggleStatus(role)}
-                          className={`p-1.5 rounded-lg ${role.status ? "text-green-600 hover:bg-green-50" : "text-gray-400 hover:bg-gray-100"}`}
-                          title={role.status ? "Deactivate" : "Activate"}
-                        >
-                          {role.status ? (
-                            <FaToggleOn size={18} />
-                          ) : (
-                            <FaToggleOff size={18} />
-                          )}
-                        </button> */}
-                        {/* ✅ ADD THIS - Manage Permissions */}
-                        <button
-                          onClick={() =>
-                            onManagePermissions && onManagePermissions(role)
-                          }
-                          className="p-1.5 text-purple-600 hover:bg-purple-50 rounded-lg"
-                          title="Manage Permissions"
-                        >
-                          <FaShieldAlt />
-                        </button>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
 
-                        {/* Edit */}
-                        <button
-                          onClick={() => openModal("edit", role)}
-                          className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg"
-                          title="Edit Role"
-                        >
-                          <FaEdit />
-                        </button>
-                        {/* Delete */}
-                        <button
-                          onClick={() => handleDelete(role)}
-                          className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg"
-                          title="Delete Role"
-                        >
-                          <FaTrash />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {/* Add/Edit Modal */}
-      {showModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black bg-opacity-50">
-          <div className="w-full max-w-md bg-white rounded-lg shadow-xl">
-            <div className="flex items-center justify-between p-6 border-b">
-              <h3 className="text-xl font-bold text-gray-800">
-                {modalMode === "add" ? "Add New Role" : "Edit Role"}
-              </h3>
-              <button
-                onClick={() => setShowModal(false)}
-                className="p-1 text-gray-400 hover:text-gray-600"
-              >
-                <FaTimes />
-              </button>
+      {/* Add / Edit modal */}
+      {(modal === "add" || modal === "edit") && (
+        <Modal
+          title={modal === "add" ? "Add Role" : "Edit Role"}
+          subtitle={modal === "add" ? "Create a new user role." : "Update this user role."}
+          onClose={closeModal}
+        >
+          <form onSubmit={(e) => { e.preventDefault(); handleSubmit(); }}>
+            <div className="mb-4">
+              <label className={labelCls}>Role Name</label>
+              <input
+                type="text"
+                value={formName}
+                onChange={(e) => { setFormName(e.target.value); setFormError(""); }}
+                placeholder="e.g. Manager, Cashier"
+                autoFocus
+                className={inputCls}
+              />
             </div>
 
-            <form onSubmit={handleSubmit} className="p-6 space-y-4">
-              {formError && (
-                <div className="p-3 text-sm text-red-600 border border-red-200 rounded-lg bg-red-50">
-                  {formError}
-                </div>
-              )}
+            <div className="mb-4">
+              <label className={labelCls}>Status</label>
+              <select
+                value={formStatus ? "Active" : "Inactive"}
+                onChange={(e) => setFormStatus(e.target.value === "Active")}
+                className={inputCls}
+              >
+                <option value="Active">Active</option>
+                <option value="Inactive">Inactive</option>
+              </select>
+            </div>
 
-              <div>
-                <label className="block mb-1.5 text-sm font-medium text-gray-700">
-                  Role Name <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  value={formData.roleName}
-                  onChange={(e) =>
-                    setFormData((p) => ({ ...p, roleName: e.target.value }))
-                  }
-                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
-                  placeholder="e.g. Manager, Cashier"
-                  required
-                />
-              </div>
+            {formError && (
+              <p className="flex items-center gap-1 mb-4 text-xs font-medium text-red-600">
+                <AlertTriangle size={13} /> {formError}
+              </p>
+            )}
 
-              <div>
-                <label className="block mb-1.5 text-sm font-medium text-gray-700">
-                  Status
-                </label>
-                <select
-                  value={formData.status ? "Active" : "Inactive"}
-                  onChange={(e) =>
-                    setFormData((p) => ({
-                      ...p,
-                      status: e.target.value === "Active",
-                    }))
-                  }
-                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
-                >
-                  <option value="Active">Active</option>
-                  <option value="Inactive">Inactive</option>
-                </select>
-              </div>
+            <div className="flex justify-end gap-2">
+              <button type="button" onClick={closeModal} disabled={saving} className={btnGhost}>Cancel</button>
+              <button type="submit" disabled={saving} className={btnPrimary}>
+                {saving ? "Saving..." : modal === "add" ? "Create Role" : "Save Changes"}
+              </button>
+            </div>
+          </form>
+        </Modal>
+      )}
 
-              <div className="flex gap-3 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setShowModal(false)}
-                  className="flex-1 px-4 py-2.5 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 font-semibold"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={isLoading}
-                  className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 font-semibold"
-                >
-                  <FaSave />
-                  {isLoading
-                    ? "Saving..."
-                    : modalMode === "add"
-                      ? "Create Role"
-                      : "Update Role"}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+      {/* Delete modal */}
+      {modal === "delete" && (
+        <ConfirmDelete
+          title="Delete role?"
+          name={activeRow?.role_name}
+          saving={saving}
+          onCancel={closeModal}
+          onConfirm={handleDelete}
+        />
       )}
     </div>
   );

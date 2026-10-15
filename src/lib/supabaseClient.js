@@ -54,7 +54,7 @@ export const userAPI = {
         .from('users')
         .select('*')
         .order('created_at', { ascending: false });
-      
+
       return { data, error: error?.message };
     } catch (err) {
       return { data: null, error: err.message };
@@ -145,6 +145,77 @@ export const userAPI = {
 };
 
 
+export const notificationAPI = {
+  async getByUser(userId, limit = 30) {
+    const { data, error } = await supabase
+      .from('notifications')
+      .select('*')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false })
+      .limit(limit);
+    return { data, error: error?.message };
+  },
+
+  async markAsRead(id) {
+    const { error } = await supabase
+      .from('notifications')
+      .update({ read: true })
+      .eq('id', id);
+    return { error: error?.message };
+  },
+
+  async markAllAsRead(userId) {
+    const { error } = await supabase
+      .from('notifications')
+      .update({ read: true })
+      .eq('user_id', userId)
+      .eq('read', false);
+    return { error: error?.message };
+  },
+
+  // Notify lahat ng active users na may role sa listahan
+  async notifyRoles(roles, payload, excludeUserId = null) {
+    const { data: users, error } = await supabase
+      .from('users')
+      .select('id')
+      .in('role', roles)
+      .eq('status', 'Active');
+    if (error) return { error: error.message };
+
+    const rows = (users || [])
+      .filter((u) => u.id !== excludeUserId)
+      .map((u) => ({ user_id: u.id, ...payload }));
+    if (!rows.length) return { error: null };
+
+    const { error: insErr } = await supabase.from('notifications').insert(rows);
+    return { error: insErr?.message };
+  },
+
+ // Notify isang specific na user
+  async notifyUser(userId, payload) {
+    const { error } = await supabase
+      .from('notifications')
+      .insert([{ user_id: userId, ...payload }]);
+    return { error: error?.message };
+  },
+
+  // Notify lahat ng users ng roles na may permission sa isang module
+  async notifyByPermission(modulePath, payload, excludeUserId = null, permission = 'can_view') {
+    const { data: perms, error } = await supabase
+      .from('role_permission')
+      .select('role_name')
+      .eq('module_path', modulePath)
+      .eq(permission, true);
+    if (error) return { error: error.message };
+
+    const roles = [...new Set((perms || []).map((p) => p.role_name))];
+    if (!roles.length) return { error: null };
+
+    return notificationAPI.notifyRoles(roles, payload, excludeUserId);
+  }
+};
+
+
 export const securityQuestionAPI = {
   async getAll() {
     try {
@@ -152,7 +223,7 @@ export const securityQuestionAPI = {
         .from('security_questions')
         .select('*')
         .order('created_at', { ascending: true });
-      
+
       return { data, error: error?.message };
     } catch (err) {
       return { data: null, error: err.message };
@@ -210,7 +281,7 @@ export const userRoleAPI = {
         .from('user_role')
         .select('*')
         .order('created_at', { ascending: false });
-      
+
       return { data, error: error?.message };
     } catch (err) {
       return { data: null, error: err.message };
@@ -223,7 +294,7 @@ export const userRoleAPI = {
         .from('user_role')
         .insert([{
           role_name: roleData.roleName,
-          status: roleData.status === "Active" || roleData.status === true 
+          status: roleData.status === 'Active' || roleData.status === true
         }])
         .select()
         .single();
@@ -240,7 +311,7 @@ export const userRoleAPI = {
         .from('user_role')
         .update({
           role_name: roleData.roleName,
-            status: roleData.status === "Active" || roleData.status === true
+          status: roleData.status === 'Active' || roleData.status === true
         })
         .eq('id', roleId)
         .select()
@@ -272,10 +343,10 @@ export const rolePermissionAPI = {
   async getPermissionsForUser(roleName) {
     try {
       const { data, error } = await supabase
-        .from('role_permission')  // Check mo kung 'role_permission' or 'role_permissions' ang table name mo
+        .from('role_permission')
         .select('*')
         .eq('role_name', roleName);
-      
+
       return { data, error: error?.message };
     } catch (err) {
       return { data: null, error: err.message };
@@ -310,10 +381,10 @@ export const rolePermissionAPI = {
       const { data, error } = await supabase
         .from('role_permission')
         .update({
-        can_view: permissionData.can_view,
-        can_create: permissionData.can_create,
-        can_edit: permissionData.can_edit,
-        can_delete: permissionData.can_delete
+          can_view: permissionData.can_view,
+          can_create: permissionData.can_create,
+          can_edit: permissionData.can_edit,
+          can_delete: permissionData.can_delete
         })
         .eq('id', permissionId)
         .select()

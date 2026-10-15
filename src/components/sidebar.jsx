@@ -4,6 +4,7 @@ import {
     FaFileInvoiceDollar,
     FaUsers,
     FaMoneyBillWave,
+    FaMoneyCheckAlt,
     FaCalculator,
     FaCoins,
     FaFolder,
@@ -21,12 +22,16 @@ import {
     FaUser,
     FaClipboardCheck,
     FaExclamationTriangle,
-    FaChartLine
+    FaChartLine,    
+    FaAddressBook
 } from 'react-icons/fa';
 import ReactDOM from 'react-dom';
 import Swal from 'sweetalert2';
 import { filterMenuByRole, loadPermissionsForRole } from '../Maintenance/role_permission';
 
+// NOTE: submenu items stay in a FLAT array. An optional `group` field on a
+// subitem tells the sidebar which heading to show it under. This keeps
+// filterMenuByRole working exactly as before.
 export const getAllMenuItems = () => [
     {
         icon: <FaTachometerAlt />,
@@ -50,13 +55,21 @@ export const getAllMenuItems = () => [
         path: 'accounting-management',
         category: 'Portals',
         submenu: [
-            { icon: <FaChartBar />, label: 'Account Summary', path: 'StatementOfAccountSummary' },
-            { icon: <FaHistory />, label: 'Bank Reconciliation', path: 'BankReconciliation' },
-            { icon: <FaFileAlt />, label: 'Chart of Accounts', path: 'ChartOfAccounts' },
-            { icon: <FaFileInvoiceDollar />, label: 'Create Billing', path: 'CreateBilling' },
-            { icon: <FaClipboardList />, label: 'Receivables List', path: 'ReceivablesList' },
-            { icon: <FaCreditCard />, label: 'Record Payment', path: 'RecordPayment' },
-            { icon: <FaCoins />, label: 'Undeposited Funds', path: 'UndepositedFunds' },
+            // General Accounting
+            { icon: <FaChartBar />, label: 'Account Summary', path: 'StatementOfAccountSummary', group: 'General Accounting' },
+            { icon: <FaFileAlt />, label: 'Chart of Accounts', path: 'ChartOfAccounts', group: 'General Accounting' },
+
+            // Billing & Receivables
+            { icon: <FaFileInvoiceDollar />, label: 'Create Billing', path: 'CreateBilling', group: 'Billing & Receivables' },
+            // { icon: <FaClipboardList />, label: 'Receivables List', path: 'ReceivablesList', group: 'Billing & Receivables' },
+            { icon: <FaCreditCard />, label: 'Record Payment', path: 'RecordPayment', group: 'Billing & Receivables' },
+            { icon: <FaCoins />, label: 'Undeposited Funds', path: 'UndepositedFunds', group: 'Billing & Receivables' },
+
+            // Banking
+            { icon: <FaHistory />, label: 'Bank Reconciliation', path: 'BankReconciliation', group: 'Banking' },
+
+            // Disbursement
+            { icon: <FaMoneyCheckAlt />, label: 'Fund Request', path: 'FundRequest', group: 'Disbursement' },
         ]
     },
     {
@@ -65,10 +78,26 @@ export const getAllMenuItems = () => [
         path: 'reports',
         category: 'Portals',
         submenu: [
-            { icon: <FaExclamationTriangle />, label: 'Collections & Receivables', path: 'ARAgingReport' },
-            { icon: <FaChartLine />, label: 'Financial Reports', path: 'FinancialReports' },
-            { icon: <FaFileAlt />, label: 'Transmittal Report', path: 'TransmittalReport' },
-            { icon: <FaHistory />, label: 'Audit Trail', path: 'AuditTrail' },
+            // Billing & Receivables
+            { icon: <FaFileInvoiceDollar />, label: 'Billing Summary', path: 'BillingSummary', group: 'Billing & Receivables' },
+      //      { icon: <FaExclamationTriangle />, label: 'Collections & Receivables', path: 'ARAgingReport', group: 'Billing & Receivables' },
+
+            // Financial
+            { icon: <FaChartLine />, label: 'Financial Reports', path: 'FinancialReports', group: 'Financial' },
+            { icon: <FaMoneyCheckAlt />, label: 'Remittances & Payables', path: 'RemittancesPayables', group: 'Financial' },
+            { icon: <FaMoneyBillWave />, label: 'Income', path: 'IncomeReportDeposited', group: 'Financial' },
+            { icon: <FaCoins />, label: 'Operating Expenses', path: 'OperatingExpensesReport', group: 'Financial' },
+
+            // Disbursement
+            { icon: <FaCoins />, label: 'Fund Request Report', path: 'FundRequestReports', group: 'Disbursement' },
+
+            // Records
+            { icon: <FaHistory />, label: 'Audit Trail', path: 'AuditTrail', group: 'Records' },
+            { icon: <FaFileAlt />, label: 'Transmittal Report', path: 'TransmittalReport', group: 'Records' },
+
+                        // Client & Employee
+            { icon: <FaAddressBook />, label: 'Client Information', path: 'ClientInformationReport', group: 'Client & Employee' },
+            { icon: <FaUsers />, label: 'Employee Information', path: 'EmployeeInformationReport', group: 'Client & Employee' },
         ]
     },
     {
@@ -79,6 +108,8 @@ export const getAllMenuItems = () => [
         submenu: [
             { icon: <FaUser />, label: 'Client Profile', path: 'ClientApproval', badge: true },
             { icon: <FaClipboardCheck />, label: 'Statement of Account', path: 'SOAApproval', badge: true },
+            { icon: <FaMoneyCheckAlt />, label: 'Fund Request', path: 'FundRequestApproval', badge: true },
+
         ]
     },
     {
@@ -97,10 +128,27 @@ export const getAllMenuItems = () => [
     },
 ];
 
+// Groups consecutive subitems that share the same `group` value.
+// Items with no `group` end up in a group whose heading is null (rendered flat).
+const groupSubmenu = (submenu = []) => {
+    const groups = [];
+    submenu.forEach((sub) => {
+        const key = sub.group || null;
+        const last = groups[groups.length - 1];
+        if (last && last.group === key) last.items.push(sub);
+        else groups.push({ group: key, items: [sub] });
+    });
+    return groups;
+};
+
 // ─── Floating popup rendered via React Portal ────────────────────────────────
 const CollapsedSubmenuPopup = ({ item, anchorRect, onNavigate, currentPage, onMouseEnter, onMouseLeave }) => {
     const POPUP_LEFT = anchorRect.right + 10;
     const POPUP_TOP  = anchorRect.top;
+    // Only one group open at a time; start with the group of the current page
+    const [openGroup, setOpenGroup] = useState(
+        item.submenu.find((s) => s.path === currentPage)?.group || null
+    );
 
     return ReactDOM.createPortal(
         <div
@@ -121,32 +169,52 @@ const CollapsedSubmenuPopup = ({ item, anchorRect, onNavigate, currentPage, onMo
                 className="border-[6px] border-transparent border-r-white"
             />
 
-            {/* Menu items */}
-            <ul className="py-1.5">
-                {item.submenu.map((subitem, i) => (
-                    <li key={i}>
-                        <div
-                            onClick={() => onNavigate(subitem.path)}
-                            className={`
-                                flex items-center gap-3 px-4 py-2.5 text-sm cursor-pointer
-                                transition-colors duration-150
-                                ${currentPage === subitem.path
-                                    ? 'bg-slate-100 text-slate-900 font-semibold'
-                                    : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
-                                }
-                            `}
-                        >
-                            <span className={`text-xs flex-shrink-0 ${currentPage === subitem.path ? 'text-emerald-500' : 'text-slate-400'}`}>
-                                {subitem.icon}
-                            </span>
-                            {subitem.label}
-                            {currentPage === subitem.path && (
-                                <div className="w-1.5 h-1.5 ml-auto bg-emerald-500 rounded-full" />
-                            )}
-                        </div>
-                    </li>
+            {/* Menu items (grouped) */}
+            <div className="py-1.5">
+                {groupSubmenu(item.submenu).map((g, gi) => (
+                    <div key={gi}>
+                        {g.group && (
+                            <button
+                                type="button"
+                                onClick={() => setOpenGroup(openGroup === g.group ? null : g.group)}
+                                className="flex items-center justify-between w-full px-4 py-2 text-xs font-semibold transition-colors text-slate-500 hover:bg-slate-50 hover:text-slate-800"
+                            >
+                                {g.group}
+                                <FaChevronDown
+                                    size={9}
+                                    className={`text-slate-400 transition-transform duration-200 ${openGroup === g.group ? 'rotate-0' : '-rotate-90'}`}
+                                />
+                            </button>
+                        )}
+                        <ul className={g.group && openGroup !== g.group ? 'hidden' : ''}>
+                            {g.items.map((subitem, i) => (
+                                <li key={i}>
+                                    <div
+                                        onClick={() => onNavigate(subitem.path)}
+                                        className={`
+                                            flex items-center gap-3 py-2.5 text-sm cursor-pointer
+                                            transition-colors duration-150
+                                            ${g.group ? 'pl-7 pr-4' : 'px-4'}
+                                            ${currentPage === subitem.path
+                                                ? 'bg-slate-100 text-slate-900 font-semibold'
+                                                : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                                            }
+                                        `}
+                                    >
+                                        <span className={`text-xs flex-shrink-0 ${currentPage === subitem.path ? 'text-emerald-500' : 'text-slate-400'}`}>
+                                            {subitem.icon}
+                                        </span>
+                                        {subitem.label}
+                                        {currentPage === subitem.path && (
+                                            <div className="w-1.5 h-1.5 ml-auto bg-emerald-500 rounded-full" />
+                                        )}
+                                    </div>
+                                </li>
+                            ))}
+                        </ul>
+                    </div>
                 ))}
-            </ul>
+            </div>
         </div>,
         document.body
     );
@@ -155,6 +223,8 @@ const CollapsedSubmenuPopup = ({ item, anchorRect, onNavigate, currentPage, onMo
 // ─── Main Sidebar ─────────────────────────────────────────────────────────────
 const Sidebar = ({ isOpen, onNavigate, currentPage, currentUser }) => {
     const [expandedMenus, setExpandedMenus]     = useState({});
+    // { [menuPath]: groupName } — one open group per menu (accordion)
+    const [expandedGroups, setExpandedGroups]   = useState({});
     const [filteredMenuItems, setFilteredMenuItems] = useState([]);
     const [hoveredItem, setHoveredItem]         = useState(null);
     const [anchorRect, setAnchorRect]           = useState(null);
@@ -176,6 +246,23 @@ const Sidebar = ({ isOpen, onNavigate, currentPage, currentUser }) => {
     useEffect(() => {
         if (isOpen) closePopup();
     }, [isOpen]);
+
+    // Auto-open the group that contains the current page
+    useEffect(() => {
+        getAllMenuItems().forEach((menu) => {
+            const match = menu.submenu?.find((s) => s.path === currentPage && s.group);
+            if (match) {
+                setExpandedGroups((prev) => ({ ...prev, [menu.path]: match.group }));
+            }
+        });
+    }, [currentPage]);
+
+    const toggleGroup = (menuPath, group) => {
+        setExpandedGroups((prev) => ({
+            ...prev,
+            [menuPath]: prev[menuPath] === group ? null : group,
+        }));
+    };
 
     const closePopup = () => {
         clearTimeout(hideTimer.current);
@@ -311,40 +398,61 @@ const Sidebar = ({ isOpen, onNavigate, currentPage, currentUser }) => {
                                         )}
                                     </div>
 
-                                    {/* Expanded sidebar — click-toggle submenu */}
+                                    {/* Expanded sidebar — click-toggle submenu (grouped tree) */}
                                     {item.submenu && isOpen && (
                                         <div className={`
                                             overflow-hidden transition-all duration-300 ease-in-out
-                                            ${expandedMenus[item.path] ? 'max-h-96 opacity-100 mt-1' : 'max-h-0 opacity-0'}
+                                            ${expandedMenus[item.path] ? 'max-h-[40rem] opacity-100 mt-1' : 'max-h-0 opacity-0'}
                                         `}>
-                                            <ul className="ml-4 pl-4 border-l border-slate-100 space-y-0.5">
-                                                {item.submenu.map((subitem, si) => (
-                                                    <li key={si}>
-                                                        <div
-                                                            onClick={() => onNavigate(subitem.path)}
-                                                            className={`
-                                                                flex items-center px-3 py-2 rounded-lg text-sm cursor-pointer
-                                                                transition-colors duration-150 group/sub
-                                                                ${currentPage === subitem.path
-                                                                    ? 'bg-slate-100 text-slate-900 font-medium'
-                                                                    : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800'
-                                                                }
-                                                            `}
-                                                        >
-                                                            <span className={`text-xs mr-3 ${currentPage === subitem.path ? 'text-emerald-500' : 'text-slate-400 group-hover/sub:text-slate-600'}`}>
-                                                                {subitem.icon}
-                                                            </span>
-                                                            <span className="flex-1">{subitem.label}</span>
-                                                            {currentPage === subitem.path && (
-                                                                <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full" />
-                                                            )}
-                                                            {subitem.badge && currentPage !== subitem.path && (
-                                                                <span className="text-xs font-medium text-slate-300">+</span>
-                                                            )}
-                                                        </div>
-                                                    </li>
+                                            <div className="pl-4 ml-4 border-l border-slate-100">
+                                                {groupSubmenu(item.submenu).map((g, gi) => (
+                                                    <div key={gi} className={g.group && gi > 0 ? 'mt-1.5' : ''}>
+                                                        {/* Group heading */}
+                                                        {g.group && (
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => toggleGroup(item.path, g.group)}
+                                                                className="flex items-center justify-between w-full px-3 py-2 text-sm transition-colors rounded-lg text-slate-500 hover:bg-slate-50 hover:text-slate-800"
+                                                            >
+                                                                <span className="font-medium">{g.group}</span>
+                                                                <FaChevronDown
+                                                                    size={9}
+                                                                    className={`text-slate-400 transition-transform duration-200 ${expandedGroups[item.path] === g.group ? 'rotate-0' : '-rotate-90'}`}
+                                                                />
+                                                            </button>
+                                                        )}
+
+                                                        <ul className={`space-y-0.5 ${g.group ? 'ml-3 pl-3 border-l border-slate-100' : ''} ${g.group && expandedGroups[item.path] !== g.group ? 'hidden' : ''}`}>
+                                                            {g.items.map((subitem, si) => (
+                                                                <li key={si}>
+                                                                    <div
+                                                                        onClick={() => onNavigate(subitem.path)}
+                                                                        className={`
+                                                                            flex items-center px-3 py-2 rounded-lg text-sm cursor-pointer
+                                                                            transition-colors duration-150 group/sub
+                                                                            ${currentPage === subitem.path
+                                                                                ? 'bg-slate-100 text-slate-900 font-medium'
+                                                                                : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800'
+                                                                            }
+                                                                        `}
+                                                                    >
+                                                                        <span className={`text-xs mr-3 ${currentPage === subitem.path ? 'text-emerald-500' : 'text-slate-400 group-hover/sub:text-slate-600'}`}>
+                                                                            {subitem.icon}
+                                                                        </span>
+                                                                        <span className="flex-1">{subitem.label}</span>
+                                                                        {currentPage === subitem.path && (
+                                                                            <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full" />
+                                                                        )}
+                                                                        {subitem.badge && currentPage !== subitem.path && (
+                                                                            <span className="text-xs font-medium text-slate-300">+</span>
+                                                                        )}
+                                                                    </div>
+                                                                </li>
+                                                            ))}
+                                                        </ul>
+                                                    </div>
                                                 ))}
-                                            </ul>
+                                            </div>
                                         </div>
                                     )}
                                 </li>

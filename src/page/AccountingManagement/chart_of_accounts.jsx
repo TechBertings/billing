@@ -130,7 +130,7 @@ export default function ChartOfAccounts() {
 
   const [showGroupModal, setShowGroupModal] = useState(false);
   const [editingGroup, setEditingGroup] = useState(null);
-  const [groupForm, setGroupForm] = useState({ label: "", is_active: true });
+  const [groupForm, setGroupForm] = useState({ label: "", is_active: true, category: "income" });
   const [deleteConfirmGroup, setDeleteConfirmGroup] = useState(null);
   const [savingGroup, setSavingGroup] = useState(false);
 
@@ -171,13 +171,14 @@ export default function ChartOfAccounts() {
 
 
 const emptyForm = {
-    code: "",
-    account_name: "",
-    is_active: true,
-    billing_mode: "flat",
-    tax_setup_id: "",
-    contribution_key: "",
-  };
+  code: "",
+  account_name: "",
+  is_active: true,
+  billing_mode: "flat",
+  tax_setup_id: "",
+  contribution_key: "",
+  due_day: "",
+};
   const [form, setForm] = useState(emptyForm);
 
   const activeGroup = groups.find((g) => g.id === activeGroupId) || null;
@@ -344,16 +345,20 @@ const fetchTaxTypes = useCallback(async () => {
     });
 
   // ── GROUP CRUD ───────────────────────────────────────────────────────────
-  const openAddGroup = () => {
-    setEditingGroup(null);
-    setGroupForm({ label: "", is_active: true });
-    setShowGroupModal(true);
-  };
-  const openEditGroup = (g) => {
-    setEditingGroup(g);
-    setGroupForm({ label: g.label || "", is_active: g.is_active });
-    setShowGroupModal(true);
-  };
+const openAddGroup = () => {
+  setEditingGroup(null);
+  setGroupForm({ label: "", is_active: true, category: "income" });
+  setShowGroupModal(true);
+};
+const openEditGroup = (g) => {
+  setEditingGroup(g);
+  setGroupForm({
+    label: g.label || "",
+    is_active: g.is_active,
+    category: g.category || "income",
+  });
+  setShowGroupModal(true);
+};
 
   const handleSaveGroup = async () => {
     if (!groupForm.label.trim()) {
@@ -361,11 +366,12 @@ const fetchTaxTypes = useCallback(async () => {
       return;
     }
     setSavingGroup(true);
-    const payload = {
-      label: groupForm.label.trim(),
-      is_active: groupForm.is_active,
-      sort_order: editingGroup ? editingGroup.sort_order : groups.length,
-    };
+ const payload = {
+  label: groupForm.label.trim(),
+  is_active: groupForm.is_active,
+  category: groupForm.category,
+  sort_order: editingGroup ? editingGroup.sort_order : groups.length,
+};
     const { error } = editingGroup
       ? await supabase
           .from("fee_groups")
@@ -474,7 +480,8 @@ const openEdit = (a) => {
     is_active: a.is_active,
     billing_mode: a.billing_mode || "flat",
     tax_setup_id: a.tax_setup_id || "",
-    contribution_key: a.contribution_key || "",   // ← bago
+    contribution_key: a.contribution_key || "",   
+    due_day: a.due_day || "",
   });
   setShowModal(true);
 };
@@ -505,6 +512,7 @@ const handleSave = async () => {
       form.billing_mode === "contribution"
         ? form.contribution_key || null
         : null,
+        due_day: form.due_day ? parseInt(form.due_day, 10) : null,
   };
   const { error } = editing
     ? await supabase
@@ -836,12 +844,19 @@ const handleSave = async () => {
                         : "bg-white text-gray-500 border border-gray-200 hover:border-gray-400"
                     }`}
                 >
-                  <FaLayerGroup size={11} /> {g.label}
-                  {!g.is_active && (
-                    <span className="text-[9px] font-bold uppercase opacity-70">
-                      (inactive)
-                    </span>
-                  )}
+<FaLayerGroup size={11} /> {g.label}
+<span
+  className={`text-[8px] font-bold uppercase px-1.5 py-0.5 rounded-full ${
+    g.category === "remittance" ? "bg-amber-100 text-amber-700" : "bg-blue-100 text-blue-700"
+  }`}
+>
+  {g.category === "remittance" ? "Remit" : "Income"}
+</span>
+{!g.is_active && (
+  <span className="text-[9px] font-bold uppercase opacity-70">
+    (inactive)
+  </span>
+)}
                 </button>
                 <span className="absolute items-center hidden gap-1 -top-2 -right-2 group-hover/tab:flex">
                   <button
@@ -1268,21 +1283,39 @@ const handleSave = async () => {
               </button>
             </div>
             <div className="p-6 space-y-4">
-              <div>
-                <label className="block text-xs font-semibold uppercase tracking-wide text-gray-400 mb-1.5">
-                  Group Name <span className="text-red-400">*</span>
-                </label>
-                <input
-                  type="text"
-                  value={groupForm.label}
-                  onChange={(e) =>
-                    setGroupForm((p) => ({ ...p, label: e.target.value }))
-                  }
-                  placeholder="e.g. Fees"
-                  className={inputCls}
-                />
-              </div>
-              <div className="flex items-center gap-3 pt-2 border-t border-gray-100">
+<div>
+  <label className="block text-xs font-semibold uppercase tracking-wide text-gray-400 mb-1.5">
+    Group Name <span className="text-red-400">*</span>
+  </label>
+  <input
+    type="text"
+    value={groupForm.label}
+    onChange={(e) =>
+      setGroupForm((p) => ({ ...p, label: e.target.value }))
+    }
+    placeholder="e.g. Fees"
+    className={inputCls}
+  />
+</div>
+
+<div>
+  <label className="block text-xs font-semibold uppercase tracking-wide text-gray-400 mb-1.5">
+    Category <span className="text-red-400">*</span>
+  </label>
+  <select
+    value={groupForm.category}
+    onChange={(e) => setGroupForm((p) => ({ ...p, category: e.target.value }))}
+    className={selectCls}
+  >
+    <option value="income">Retainer Fee (Income)</option>
+    <option value="remittance">Gov't Remittance</option>
+  </select>
+  <p className="text-[10px] text-gray-300 mt-1">
+    Ito ang gagamitin para i-classify ang billing items sa payments (income vs remittance balance).
+  </p>
+</div>
+
+<div className="flex items-center gap-3 pt-2 border-t border-gray-100">
                 <button
                   onClick={() =>
                     setGroupForm((p) => ({ ...p, is_active: !p.is_active }))
@@ -1552,6 +1585,26 @@ const handleSave = async () => {
   </p>
 </div>
               <div>
+                {activeGroup?.category === "remittance" && (
+  <div>
+    <label className="block text-[11px] font-semibold uppercase tracking-wider text-gray-400 mb-1.5">
+      Remittance Due Day{" "}
+      <span className="font-normal text-gray-300 normal-case">(optional)</span>
+    </label>
+    <input
+      type="number"
+      min="1"
+      max="31"
+      value={form.due_day || ""}
+      onChange={(e) => setForm((p) => ({ ...p, due_day: e.target.value }))}
+      placeholder="e.g. 28"
+      className={inputCls}
+    />
+    <p className="text-[10px] text-gray-300 mt-1">
+      Araw ng buwan ng deadline. Lalabas sa ilalim ng column sa Remittances report.
+    </p>
+  </div>
+)}
                 <label className="block text-[11px] font-semibold uppercase tracking-wider text-gray-400 mb-1.5">
                   Link to Tax Type{" "}
                   <span className="font-normal text-gray-300 normal-case">(optional)</span>

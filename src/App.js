@@ -13,6 +13,7 @@ import EmployeeProfile from './page/ClientManagement/employee_profile';
 import BillingInformation from './page/ClientManagement/billing_information';
 import CreateBilling from './page/AccountingManagement/create_billing';
 import RecordPayment from './page/AccountingManagement/record_payment';
+import FundRequest from './page/AccountingManagement/fund_request';
 import StatementOfAccountSummary from './page/AccountingManagement/statement_of_account_summary';
 import FinanceDashboard from './page/finance_dashboard';
 import JobOrder from './page/ClientManagement/job_order';
@@ -25,7 +26,14 @@ import TransmittalReport from './page/Reports/document_management_transmittal_re
 import ReceivablesList from './page/AccountingManagement/receivable_list';
 import UndepositedFunds from './page/AccountingManagement/undeposited_funds';
 import AuditTrail from './page/Reports/audit_trail';
-
+import FundRequestApproval from './page/Approval/fund_request_approval';
+import FundRequestReports from './page/Reports/fund_request_reports';
+import BillingSummary from './page/Reports/billing_summary';
+import RemittancesPayables from './page/Reports/remittances_payables_reports';
+import IncomeReportDeposited from './page/Reports/income_report';
+import ClientInformationReport from './page/Reports/client_information_report';
+import EmployeeInformationReport from './page/Reports/employee_information_report';
+import OperatingExpensesReport from './page/Reports/operating_expenses';
 
 // ── Roles allowed to approve & send SOAs ──
 export const APPROVER_ROLES = ['Admin', 'Manager', 'Supervisor'];
@@ -54,18 +62,40 @@ function App() {
     const saved = localStorage.getItem('currentPage');
     return saved || 'dashboard';
   });
-const [preselectedClient, setPreselectedClient] = useState(null);
-const [preselectedBillingId, setPreselectedBillingId] = useState(null);
+  const [preselectedClient, setPreselectedClient] = useState(null);
+  const [preselectedBillingId, setPreselectedBillingId] = useState(null);
+
+  // ── Hindi pa dapat mag-render ng page hangga't hindi pa na-load ang permissions ──
+  const [permsReady, setPermsReady] = useState(false);
 
   useEffect(() => { localStorage.setItem('isLoggedIn', isLoggedIn); }, [isLoggedIn]);
   useEffect(() => { localStorage.setItem('currentUser', JSON.stringify(currentUser)); }, [currentUser]);
   useEffect(() => { localStorage.setItem('sidebarOpen', sidebarOpen); }, [sidebarOpen]);
   useEffect(() => { localStorage.setItem('currentPage', currentPage); }, [currentPage]);
 
+  // ── Pagka-refresh: i-load ulit ang permissions ng naka-login na user ──
+  useEffect(() => {
+    let cancelled = false;
+    const initPermissions = async () => {
+      if (isLoggedIn && currentUser?.role) {
+        try {
+          await loadPermissionsForRole(currentUser.role);
+        } catch (err) {
+          console.error('Failed to load permissions:', err);
+        }
+      }
+      if (!cancelled) setPermsReady(true);
+    };
+    initPermissions();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const handleLogin = async (userData) => {
     setIsLoggedIn(true);
     setCurrentUser(userData);
     await loadPermissionsForRole(userData.role);
+    setPermsReady(true);
     setCurrentPage('dashboard');
   };
 
@@ -94,6 +124,12 @@ const [preselectedBillingId, setPreselectedBillingId] = useState(null);
       }
       setCurrentPage(page);
     }
+  };
+
+  // Notification click -> page navigation (state-based, hindi react-router)
+  const handleNotificationClick = (n) => {
+    if (n.link === '/billing/approvals') handleNavigation('SOAApproval');
+    else if (n.link === '/billing') handleNavigation('CreateBilling');
   };
 
   const AccessDenied = () => (
@@ -128,41 +164,61 @@ const [preselectedBillingId, setPreselectedBillingId] = useState(null);
       case 'dashboard':
         return <FinanceDashboard currentUser={currentUser} onNavigate={handleNavigation} />;
 
-      case 'Maintenance':        return <Maintenance />;
-      case 'UserManagement':     return <UserManagement />;
-      case 'ClientProfile':      return <ClientProfile />;
-      case 'ClientProfileList':  return <ClientProfileList />;
-      case 'ClientApproval':     return <ClientApproval currentUser={currentUser} />;
-      case 'SOAApproval':        return <SOAApproval currentUser={currentUser} />;
-      case 'EmployeeProfile':    return <EmployeeProfile />;
-      case 'BillingInformation': return <BillingInformation />;
+      case 'Maintenance':               return <Maintenance />;
+      case 'UserManagement':            return <UserManagement />;
+      case 'ClientProfile':             return <ClientProfile />;
+      case 'ClientProfileList':         return <ClientProfileList />;
+      case 'ClientApproval':            return <ClientApproval currentUser={currentUser} />;
+      case 'SOAApproval':               return <SOAApproval currentUser={currentUser} />;
+      case 'EmployeeProfile':           return <EmployeeProfile />;
+      case 'BillingInformation':        return <BillingInformation />;
       case 'StatementOfAccountSummary': return <StatementOfAccountSummary />;
-      case 'ARAgingReport':      return <ARAgingReport />;
-      case 'FinancialReports':   return <FinancialReports />;
-case 'TransmittalReport':
-  return <TransmittalReport currentUser={currentUser} />;
-  case 'AuditTrail':
-  return <AuditTrail />;
-      case 'ReceivablesList':
-        return <ReceivablesList
-          onSelectInvoice={(client, clientId, billingId) => {
-            setPreselectedClient(client);
-            setPreselectedBillingId(billingId);
-            handleNavigation('RecordPayment');
-          }}
-        />;
+      case 'ARAgingReport':             return <ARAgingReport />;
+      case 'FinancialReports':          return <FinancialReports />;
+      case 'FundRequestApproval':       return <FundRequestApproval currentUser={currentUser} />;
+      case 'FundRequestReports':        return <FundRequestReports />;
+      case 'BillingSummary':            return <BillingSummary />;
+      case 'RemittancesPayables':       return <RemittancesPayables currentUser={currentUser} />;
+      case 'IncomeReportDeposited':     return <IncomeReportDeposited />;
+      case 'OperatingExpensesReport':   return <OperatingExpensesReport />;
+      case 'TransmittalReport':         return <TransmittalReport currentUser={currentUser} />;
+      case 'AuditTrail':                return <AuditTrail />;
+      case 'ClientInformationReport':   return <ClientInformationReport />;
+      case 'EmployeeInformationReport': return <EmployeeInformationReport />;
 
-           case 'RecordPayment':
-            return <RecordPayment
-              currentUser={currentUser}
-              onClose={() => handleNavigation('ReceivablesList')}
-              onSaved={() => {
-                setPreselectedClient(null);
-                setPreselectedBillingId(null);
-              }}
-              preselectedClient={preselectedClient}
-              preselectedBillingId={preselectedBillingId}
-            />;
+      case 'ReceivablesList':
+        return (
+          <ReceivablesList
+            onSelectInvoice={(client, clientId, billingId) => {
+              setPreselectedClient(client);
+              setPreselectedBillingId(billingId);
+              handleNavigation('RecordPayment');
+            }}
+          />
+        );
+
+      case 'RecordPayment':
+        return (
+          <RecordPayment
+            currentUser={currentUser}
+            onClose={() => handleNavigation('ReceivablesList')}
+            onSaved={() => {
+              setPreselectedClient(null);
+              setPreselectedBillingId(null);
+            }}
+            preselectedClient={preselectedClient}
+            preselectedBillingId={preselectedBillingId}
+          />
+        );
+
+      case 'FundRequest':
+        return (
+          <FundRequest
+            currentUser={currentUser}
+            onClose={() => handleNavigation('dashboard')}
+            onSaved={() => {}}
+          />
+        );
 
       // ── Pass currentUser so CreateBilling knows the role ──
       case 'CreateBilling':
@@ -171,7 +227,7 @@ case 'TransmittalReport':
       case 'JobOrder':           return <JobOrder />;
       case 'BankReconciliation': return <BankReconciliation />;
       case 'ChartOfAccounts':    return <ChartOfAccounts />;
-            case 'UndepositedFunds':   return <UndepositedFunds currentUser={currentUser} />;
+      case 'UndepositedFunds':   return <UndepositedFunds currentUser={currentUser} />;
 
       default:
         return (
@@ -191,12 +247,26 @@ case 'TransmittalReport':
     }
   };
 
+  // ── Hintayin muna ang permissions bago mag-render (iwas Access Denied flash) ──
+  if (isLoggedIn && !permsReady) {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-gray-50">
+        <div className="w-8 h-8 border-2 border-green-500 rounded-full border-t-transparent animate-spin" />
+      </div>
+    );
+  }
+
   if (!isLoggedIn && currentPage !== 'login') return <Login onLogin={handleLogin} />;
   if (currentPage === 'login') return <Login onLogin={handleLogin} />;
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <Header toggleSidebar={toggleSidebar} currentUser={currentUser} onLogout={handleLogout} />
+      <Header
+        toggleSidebar={toggleSidebar}
+        user={currentUser}
+        onLogout={handleLogout}
+        onNotificationClick={handleNotificationClick}
+      />
       <Sidebar
         isOpen={sidebarOpen}
         onNavigate={handleNavigation}

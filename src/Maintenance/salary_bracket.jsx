@@ -91,13 +91,13 @@ const SalaryBracket = () => {
         .update({ salary_bracket_amount: amount })
         .eq("id", editTarget.id);
       if (error) showToast("Update failed.", "error");
-      else { showToast("Salary bracket updated!"); fetchBrackets(); }
+      else { showToast("Salary bracket updated."); fetchBrackets(); }
     } else {
       const { error } = await supabase
         .from("salary_bracket")
         .insert({ sb_code: sbCode, salary_bracket_amount: amount });
       if (error) showToast("Insert failed.", "error");
-      else { showToast("Salary bracket added!"); fetchBrackets(); }
+      else { showToast("Salary bracket added."); fetchBrackets(); }
     }
     setLoading(false);
     setModalOpen(false);
@@ -108,7 +108,7 @@ const SalaryBracket = () => {
     setDeleteLoading(true);
     const { error } = await supabase.from("salary_bracket").delete().eq("id", deleteTarget.id);
     if (error) showToast("Delete failed.", "error");
-    else { showToast("Salary bracket deleted!"); fetchBrackets(); }
+    else { showToast("Salary bracket deleted."); fetchBrackets(); }
     setDeleteLoading(false);
     setDeleteTarget(null);
   };
@@ -130,7 +130,7 @@ const SalaryBracket = () => {
     <>
       <CustomerMaintenanceTable
         title="Salary Bracket"
-        icon={<Banknote size={22} className="text-green-600" />}
+        icon={<Banknote size={26} strokeWidth={1.5} className="text-black" />}
         totalCount={brackets.length}
         search={search}
         onSearchChange={setSearch}
@@ -141,8 +141,8 @@ const SalaryBracket = () => {
           { label: "Salary Bracket Amount", key: "salary_bracket_amount_display" },
         ]}
         rows={displayRows}
-        onEdit={(row) => openEdit(brackets.find(b => b.id === row.id))}
-        onDelete={(row) => setDeleteTarget(brackets.find(b => b.id === row.id))}
+        onEdit={(row) => openEdit(brackets.find((b) => b.id === row.id))}
+        onDelete={(row) => setDeleteTarget(brackets.find((b) => b.id === row.id))}
         fetching={fetching}
         emptyMessage="No salary brackets found."
       />
@@ -150,6 +150,7 @@ const SalaryBracket = () => {
       <MaintenanceModal
         open={modalOpen}
         title={editTarget ? "Edit Salary Bracket" : "Add Salary Bracket"}
+        subtitle={editTarget ? "Update this salary bracket." : "Create a new salary bracket."}
         onClose={() => setModalOpen(false)}
         onSubmit={handleSubmit}
         loading={loading}
@@ -170,6 +171,12 @@ const SalaryBracket = () => {
         onClose={() => setDeleteTarget(null)}
         onConfirm={handleDelete}
         loading={deleteLoading}
+        title="Delete salary bracket?"
+        name={
+          deleteTarget
+            ? `${deleteTarget.sb_code} · ₱${formatAmount(deleteTarget.salary_bracket_amount)}`
+            : undefined
+        }
       />
 
       <Toast msg={toast.msg} type={toast.type} />

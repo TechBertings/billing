@@ -5,6 +5,7 @@ import {
   FaSearch, FaCalendarAlt, FaPhoneAlt, FaArrowUp, FaArrowDown
 } from 'react-icons/fa';
 import { supabase } from '../lib/supabaseClient';
+import { getDataScope } from '../Maintenance/role_permission';
 
 // ─── PALETTE — deep teal (dark/primary) + mint green (accent/positive) only.
 // Red is used sparingly, inline-text-only, for overdue/negative deltas — matching
@@ -14,6 +15,23 @@ const TEAL_DEEPER = '#0a2f2f';   // gradient end for hero card
 const MINT        = '#22c55e';   // bright accent — positive, buttons, success pill
 const MINT_SOFT   = '#e9f9ef';   // soft mint background for chips/pills
 const RED_TEXT    = '#dc2626';   // negative delta / overdue — text only, no big blocks
+
+// ─── DATA SCOPE ───────────────────────────────────────────────────────────────
+// Columns na nagsasabi kung kanino ang record (para sa "Own only" scope).
+// I-adjust kung iba ang pangalan ng columns sa database mo.
+const OWNER_COLS = {
+  billing_statements: ['created_by', 'approved_by'],
+  fund_requests:      ['requested_by', 'approved_by'],
+  follow_ups:         ['created_by'],
+  client_profile:     ['created_by', 'approved_by'],
+};
+
+// Kapag scope === 'own', limitahan sa records na isinumite/na-approve ng user.
+const applyScope = (query, table, scope, name) => {
+  if (scope !== 'own') return query;
+  const safe = String(name || '').replace(/"/g, '\\"');
+  return query.or(OWNER_COLS[table].map((c) => `${c}.eq."${safe}"`).join(','));
+};
 
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
 const fmtPeso = (n) =>
@@ -53,12 +71,15 @@ function clientDisplayName(c) {
   );
 }
 
-async function fetchBillingSummary() {
-  const { data: statements, error: stErr } = await supabase
+async function fetchBillingSummary(scope, ownerName) {
+  let stQuery = supabase
     .from('billing_statements')
     .select('id, soa_number, client_id, soa_date, due_date, status')
     .not('status', 'in', '(draft,pending_approval)')
     .order('soa_date', { ascending: false });
+  stQuery = applyScope(stQuery, 'billing_statements', scope, ownerName);
+
+  const { data: statements, error: stErr } = await stQuery;
   if (stErr) throw stErr;
 
   const billingIds = (statements || []).map((s) => s.id);
@@ -195,20 +216,38 @@ export default function FinanceDashboard({ currentUser, onNavigate }) {
   const [permitFilter, setPermitFilter] = useState('all'); // all | expiring | expired
   const [search, setSearch]           = useState('');
 
+  // ── Data scope galing sa Role Permissions: 'own' (submitted/approved ko lang) o 'all' ──
+  const ownerName = currentUser?.fullName || currentUser?.full_name || '';
+  const scope     = getDataScope(currentUser?.role, 'dashboard');
+
   // ── Fetch data ───────────────────────────────────────────────────────────
   useEffect(() => {
     const fetchAll = async () => {
+      setLoading(true);
       try {
         const [billingData, frRes, fuRes, pmRes] = await Promise.all([
-          fetchBillingSummary(),
-          supabase.from('fund_requests').select('*').order('created_at', { ascending: false }).limit(10),
-          supabase.from('follow_ups').select('*').order('follow_up_date', { ascending: true }).limit(10),
-          supabase.from('client_profile').select('id,client_id,business_name,date_of_expiration,business_registration,account').not('date_of_expiration', 'is', null).order('date_of_expiration', { ascending: true }).limit(50),
+          fetchBillingSummary(scope, ownerName),
+          applyScope(
+            supabase.from('fund_requests').select('*').order('created_at', { ascending: false }).limit(10),
+            'fund_requests', scope, ownerName
+          ),
+          applyScope(
+            supabase.from('follow_ups').select('*').order('follow_up_date', { ascending: true }).limit(10),
+            'follow_ups', scope, ownerName
+          ),
+          applyScope(
+            supabase.from('client_profile')
+              .select('id,client_id,business_name,date_of_expiration,business_registration,account')
+              .not('date_of_expiration', 'is', null)
+              .order('date_of_expiration', { ascending: true })
+              .limit(50),
+            'client_profile', scope, ownerName
+          ),
         ]);
         setBilling(billingData || []);
-        if (frRes.data)   setFundReqs(frRes.data);
-        if (fuRes.data)   setFollowUps(fuRes.data);
-        if (pmRes.data)   setPermits(pmRes.data);
+        setFundReqs(frRes.data || []);
+        setFollowUps(fuRes.data || []);
+        setPermits(pmRes.data || []);
       } catch (e) {
         console.error('Dashboard fetch error:', e);
       } finally {
@@ -216,7 +255,7 @@ export default function FinanceDashboard({ currentUser, onNavigate }) {
       }
     };
     fetchAll();
-  }, []);
+  }, [scope, ownerName]);
 
   // ── Derived — billing totals computed over the FULL set, list shows latest 10 ──
   const totalBilled        = billing.reduce((s, b) => s + Number(b.amount || 0), 0);
@@ -259,6 +298,7 @@ export default function FinanceDashboard({ currentUser, onNavigate }) {
           <p className="text-sm text-slate-500 mt-0.5">
             {new Date().toLocaleDateString('en-PH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
             {currentUser && <span className="ml-2" style={{ color: TEAL_DARK }}>· {currentUser.fullName || currentUser.username}</span>}
+            {scope === 'own' && <span className="ml-2 text-xs text-slate-400">· Showing my activity only</span>}
           </p>
         </div>
       </div>

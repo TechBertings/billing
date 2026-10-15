@@ -1,11 +1,14 @@
 import React, { useState, useEffect } from "react";
-import { Plus, Trash2, Pencil, Search } from "lucide-react";
+import { Plus, Trash2, Pencil, Search, X, Home } from "lucide-react";
 import { supabase } from "../lib/supabaseClient";
-import {
-  DeleteModal,
-  Toast,
-} from "../components/customer_maintenance";
+import { DeleteModal, Toast } from "../components/customer_maintenance";
 
+/* ── Shared look (same as tax_type / business_registration / etc.) ── */
+const inputCls   = "w-full px-3 py-2 text-sm bg-white border border-gray-200 rounded-md focus:outline-none focus:border-gray-400 focus:ring-1 focus:ring-gray-200";
+const cellInput  = "w-full px-2 py-1.5 text-xs bg-white border border-gray-200 rounded-md focus:outline-none focus:border-gray-400 focus:ring-1 focus:ring-gray-200";
+const btnPrimary = "flex items-center gap-2 px-3.5 py-2 text-sm font-medium text-white transition bg-gray-900 rounded-md hover:bg-black disabled:opacity-50";
+const btnGhost   = "px-3.5 py-2 text-sm font-medium text-gray-600 transition bg-white border border-gray-200 rounded-md hover:bg-gray-50 disabled:opacity-50";
+const iconBtn    = "p-1.5 text-gray-400 transition rounded-md hover:bg-gray-100 hover:text-black";
 
 // ─── Auto-generate next rf_code ──────────────────────────────────────
 const generateNextCode = (existingList) => {
@@ -37,6 +40,9 @@ const formatDisplayDate = (dateStr) => {
   return d.toLocaleDateString("en-US", { month: "short", day: "2-digit", year: "numeric" });
 };
 
+const fmtMoney = (n) =>
+  Number(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2 });
+
 // ─── Number input that shows comma-formatted digits while typing,
 //     but stores/returns the raw numeric string (no commas) ──────────
 const NumberField = ({ value, onChange, placeholder = "0.00" }) => {
@@ -59,7 +65,7 @@ const NumberField = ({ value, onChange, placeholder = "0.00" }) => {
         const raw = e.target.value.replace(/,/g, "");
         if (raw === "" || /^\d*\.?\d*$/.test(raw)) onChange(raw);
       }}
-      className="w-full px-2 py-1.5 text-xs text-right border rounded-md border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-200"
+      className={`${cellInput} text-right`}
     />
   );
 };
@@ -75,6 +81,7 @@ const RentFees = () => {
   const [rfCode, setRfCode] = useState("");
   const [rows, setRows] = useState([emptyRow(1)]);
   const [loading, setLoading] = useState(false);
+  const [formError, setFormError] = useState("");
 
   // Delete (single schedule row from the list view — removes the parent
   // rent fee record too, automatically, if it was the last row left)
@@ -108,6 +115,7 @@ const RentFees = () => {
     setEditTarget(null);
     setRfCode(generateNextCode(rentFees));
     setRows([emptyRow(1)]);
+    setFormError("");
     setModalOpen(true);
   };
 
@@ -128,11 +136,18 @@ const RentFees = () => {
         wtax: d.wtax ?? "",
       }));
     setRows(details.length ? details : [emptyRow(1)]);
+    setFormError("");
     setModalOpen(true);
+  };
+
+  const closeModal = () => {
+    setModalOpen(false);
+    setFormError("");
   };
 
   // ── Row helpers ──
   const updateRow = (index, field, value) => {
+    setFormError("");
     setRows((prev) => prev.map((r, i) => (i === index ? { ...r, [field]: value } : r)));
   };
 
@@ -150,7 +165,8 @@ const RentFees = () => {
   // ── Submit ──
   const handleSubmit = async () => {
     if (rows.some((r) => !r.period_start || !r.period_end)) {
-      return showToast("Each row needs a period start and end date.", "error");
+      setFormError("Each row needs a period start and end date.");
+      return;
     }
 
     setLoading(true);
@@ -184,7 +200,7 @@ const RentFees = () => {
 
       if (detailError) showToast("Rental schedule rows failed to save.", "error");
       else {
-        showToast("Rent fee updated!");
+        showToast("Rent fee updated.");
         fetchRentFees();
       }
     } else {
@@ -214,7 +230,7 @@ const RentFees = () => {
 
       if (detailError) showToast("Rental schedule rows failed to save.", "error");
       else {
-        showToast("Rent fee added!");
+        showToast("Rent fee added.");
         fetchRentFees();
       }
     }
@@ -240,7 +256,7 @@ const RentFees = () => {
       if (remaining.length === 0 && rentFeeId) {
         await supabase.from("rent_fees").delete().eq("id", rentFeeId);
       }
-      showToast("Schedule row deleted!");
+      showToast("Schedule row deleted.");
       fetchRentFees();
     }
 
@@ -254,236 +270,228 @@ const RentFees = () => {
   );
 
   return (
-    <>
-      <div className="max-w-6xl mx-auto">
-        <div className="flex items-center justify-between mb-6">
+    <div>
+      <Toast msg={toast.msg} type={toast.type} />
+
+      {/* Header */}
+      <div className="flex flex-wrap items-center justify-between gap-4 mb-5">
+        <div className="flex items-center gap-3">
+          <Home size={26} strokeWidth={1.5} className="text-black" />
           <div>
-            <h1 className="text-2xl font-black tracking-tight text-slate-800">Rent Fees</h1>
-            <p className="mt-0.5 text-sm font-medium text-slate-400">
-              Total: {rentFees.length} record{rentFees.length !== 1 ? "s" : ""}
+            <h2 className="text-lg font-semibold text-gray-800">Rent Fees</h2>
+            <p className="text-xs text-gray-500">
+              {rentFees.length} rent fee{rentFees.length !== 1 ? "s" : ""} configured
             </p>
           </div>
-          <button
-            onClick={openAdd}
-            className="flex items-center gap-2 px-4 py-2.5 text-sm font-bold text-white transition-all bg-blue-600 rounded-xl hover:bg-blue-700"
-          >
-            <Plus size={16} />
-            Add Rent Fee
-          </button>
         </div>
-
-        <div className="relative mb-6">
-          <Search size={16} className="absolute -translate-y-1/2 left-4 top-1/2 text-slate-400" />
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search rent fees..."
-            className="w-full py-3 pr-4 text-sm font-medium bg-white border pl-11 rounded-xl border-slate-200 text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-300"
-          />
-        </div>
-
-        {fetching ? (
-          <div className="py-16 text-sm font-semibold text-center text-slate-400">Loading rent fees...</div>
-        ) : filtered.length === 0 ? (
-          <div className="px-6 py-4 text-sm font-bold text-center bg-white border border-slate-200 rounded-2xl text-slate-500">
-            No rent fee schedules found.
-          </div>
-        ) : (
-          <div className="space-y-5">
-            {filtered.map((rf) => {
-              const details = (rf.rent_fee_details || []).slice().sort((a, b) => a.year - b.year);
-              return (
-                <div key={rf.id} className="overflow-hidden bg-white border rounded-2xl border-slate-200">
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="text-slate-400">
-                          <th className="px-5 py-2 font-bold text-left">Code</th>
-                          <th className="px-5 py-2 font-bold text-left">Year</th>
-                          <th className="px-5 py-2 font-bold text-left">Period</th>
-                          <th className="px-5 py-2 font-bold text-right">Net of VAT</th>
-                          <th className="px-5 py-2 font-bold text-right">VAT</th>
-                          <th className="px-5 py-2 font-bold text-right">WTAX</th>
-                          <th className="px-5 py-2 font-bold text-right">Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {details.length === 0 ? (
-                          <tr>
-                            <td colSpan={7} className="px-5 py-4 text-center text-slate-400">
-                              No schedule rows yet.
-                            </td>
-                          </tr>
-                        ) : (
-                          details.map((d) => (
-                            <tr key={d.id} className="border-t border-slate-100">
-                              <td className="px-5 py-2.5 font-bold text-blue-700">{rf.rf_code}</td>
-                              <td className="px-5 py-2.5 font-bold text-slate-700">{d.year}</td>
-                              <td className="px-5 py-2.5 font-medium text-slate-600">
-                                {formatDisplayDate(d.period_start)} - {formatDisplayDate(d.period_end)}
-                              </td>
-                              <td className="px-5 py-2.5 font-semibold text-right text-slate-700">
-                                {Number(d.net_of_vat || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                              </td>
-                              <td className="px-5 py-2.5 font-semibold text-right text-slate-700">
-                                {Number(d.vat || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                              </td>
-                              <td className="px-5 py-2.5 font-semibold text-right text-slate-700">
-                                {Number(d.wtax || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                              </td>
-                              <td className="px-5 py-2.5 text-right whitespace-nowrap">
-                                <button
-                                  onClick={() => openEdit(rf)}
-                                  className="inline-flex items-center gap-1 px-2 py-1 mr-1.5 text-xs font-bold text-amber-600 bg-amber-50 rounded-md hover:bg-amber-100"
-                                >
-                                  <Pencil size={12} />
-                                  Edit
-                                </button>
-                                <button
-                                  onClick={() => setDeleteRowTarget(d)}
-                                  className="inline-flex items-center gap-1 px-2 py-1 text-xs font-bold text-red-600 rounded-md bg-red-50 hover:bg-red-100"
-                                >
-                                  <Trash2 size={12} />
-                                  Delete
-                                </button>
-                              </td>
-                            </tr>
-                          ))
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
+        <button onClick={openAdd} className={btnPrimary}>
+          <Plus size={14} /> Add Rent Fee
+        </button>
       </div>
 
+      {/* Search */}
+      <div className="relative max-w-sm mb-4">
+        <Search size={14} className="absolute text-gray-300 -translate-y-1/2 pointer-events-none left-3 top-1/2" />
+        <input
+          type="text"
+          placeholder="Search rent fees..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className={`${inputCls} pl-9`}
+        />
+      </div>
+
+      {/* List */}
+      {fetching ? (
+        <div className="py-12 text-center text-gray-400 bg-white border border-gray-200 rounded-lg">
+          Loading...
+        </div>
+      ) : filtered.length === 0 ? (
+        <div className="py-12 text-center text-gray-400 bg-white border border-gray-200 rounded-lg">
+          {search ? "No rent fees match your search." : "No rent fee schedules found."}
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {filtered.map((rf) => {
+            const details = (rf.rent_fee_details || []).slice().sort((a, b) => a.year - b.year);
+            return (
+              <div key={rf.id} className="overflow-hidden bg-white border border-gray-200 rounded-lg">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead className="border-b border-gray-100 bg-gray-50">
+                      <tr>
+                        <th className="px-4 py-2.5 text-xs font-medium text-left text-gray-500">Code</th>
+                        <th className="px-4 py-2.5 text-xs font-medium text-left text-gray-500">Year</th>
+                        <th className="px-4 py-2.5 text-xs font-medium text-left text-gray-500">Period</th>
+                        <th className="px-4 py-2.5 text-xs font-medium text-right text-gray-500">Net of VAT</th>
+                        <th className="px-4 py-2.5 text-xs font-medium text-right text-gray-500">VAT</th>
+                        <th className="px-4 py-2.5 text-xs font-medium text-right text-gray-500">WTAX</th>
+                        <th className="px-4 py-2.5 text-xs font-medium text-right text-gray-500">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {details.length === 0 ? (
+                        <tr>
+                          <td colSpan={7} className="py-8 text-center text-gray-400">
+                            No schedule rows yet.
+                          </td>
+                        </tr>
+                      ) : (
+                        details.map((d) => (
+                          <tr key={d.id} className="border-t border-gray-100 hover:bg-gray-50">
+                            <td className="px-4 py-3">
+                              <span className="px-2 py-0.5 font-mono text-xs text-gray-600 bg-gray-100 rounded">
+                                {rf.rf_code}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3 text-gray-800">{d.year}</td>
+                            <td className="px-4 py-3 text-gray-600 whitespace-nowrap">
+                              {formatDisplayDate(d.period_start)} - {formatDisplayDate(d.period_end)}
+                            </td>
+                            <td className="px-4 py-3 text-right text-gray-800">{fmtMoney(d.net_of_vat)}</td>
+                            <td className="px-4 py-3 text-right text-gray-800">{fmtMoney(d.vat)}</td>
+                            <td className="px-4 py-3 text-right text-gray-800">{fmtMoney(d.wtax)}</td>
+                            <td className="px-4 py-3">
+                              <div className="flex items-center justify-end gap-1">
+                                <button onClick={() => openEdit(rf)} title="Edit" className={iconBtn}>
+                                  <Pencil size={15} />
+                                </button>
+                                <button onClick={() => setDeleteRowTarget(d)} title="Delete" className={iconBtn}>
+                                  <Trash2 size={15} />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Add / Edit modal */}
       {modalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40">
-          <div className="w-full max-w-4xl overflow-hidden bg-white shadow-xl rounded-2xl max-h-[90vh] flex flex-col">
-            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
-              <h2 className="text-lg font-black text-slate-800">
-                {editTarget ? "Edit Rent Fee" : "Add Rent Fee"}
-              </h2>
-              <button
-                onClick={() => setModalOpen(false)}
-                className="text-sm font-semibold text-slate-400 hover:text-slate-600"
-              >
-                ✕
+        <div
+          className="fixed inset-0 z-40 flex items-center justify-center p-4 bg-black/40"
+          onClick={(e) => e.target === e.currentTarget && closeModal()}
+        >
+          <div className="w-full max-w-4xl max-h-[90vh] flex flex-col bg-white border border-gray-200 rounded-lg shadow-xl">
+            <div className="flex items-start justify-between px-6 pt-5 shrink-0">
+              <div>
+                <h2 className="text-base font-semibold text-gray-800">
+                  {editTarget ? "Edit Rent Fee" : "Add Rent Fee"}
+                </h2>
+                <p className="mt-0.5 text-xs text-gray-500">
+                  {editTarget ? "Update this rental schedule." : "Create a new rental schedule."}
+                </p>
+              </div>
+              <button type="button" onClick={closeModal} className={iconBtn}>
+                <X size={16} />
               </button>
             </div>
 
-            <div className="flex-1 px-6 py-5 overflow-y-auto">
-              <div className="flex items-center justify-between mb-3">
-                <span className="text-xs font-bold tracking-wide uppercase text-slate-500">
-                  Rental Schedule
-                </span>
-                <button
-                  onClick={addRow}
-                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-blue-600 transition-all bg-blue-50 rounded-lg hover:bg-blue-100"
-                >
-                  <Plus size={14} />
-                  Add Row
+            <form
+              onSubmit={(e) => { e.preventDefault(); handleSubmit(); }}
+              className="flex flex-col flex-1 min-h-0"
+            >
+              <div className="flex-1 px-6 py-5 overflow-y-auto">
+                <div className="flex items-center justify-between mb-3">
+                  <span className="text-xs font-medium text-gray-500">Rental Schedule</span>
+                  <button type="button" onClick={addRow} className={`${btnGhost} flex items-center gap-1.5 !px-3 !py-1.5 text-xs`}>
+                    <Plus size={13} /> Add Row
+                  </button>
+                </div>
+
+                <div className="overflow-x-auto border border-gray-200 rounded-md">
+                  <table className="w-full text-sm">
+                    <thead className="border-b border-gray-100 bg-gray-50">
+                      <tr>
+                        <th className="px-3 py-2 text-xs font-medium text-left text-gray-500">Code</th>
+                        <th className="px-3 py-2 text-xs font-medium text-center text-gray-500">Year</th>
+                        <th className="px-3 py-2 text-xs font-medium text-left text-gray-500">Period Start</th>
+                        <th className="px-3 py-2 text-xs font-medium text-left text-gray-500">Period End</th>
+                        <th className="px-3 py-2 text-xs font-medium text-right text-gray-500">Net of VAT</th>
+                        <th className="px-3 py-2 text-xs font-medium text-right text-gray-500">VAT</th>
+                        <th className="px-3 py-2 text-xs font-medium text-right text-gray-500">WTAX</th>
+                        <th className="px-3 py-2"></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {rows.map((row, i) => (
+                        <tr key={i} className="border-t border-gray-100">
+                          <td className="px-3 py-2">
+                            <span className="px-2 py-0.5 font-mono text-xs text-gray-600 bg-gray-100 rounded">
+                              {rfCode}
+                            </span>
+                          </td>
+                          <td className="px-3 py-2 text-center text-gray-800">{row.year}</td>
+                          <td className="px-3 py-1.5">
+                            <input
+                              type="date"
+                              value={row.period_start}
+                              onChange={(e) => updateRow(i, "period_start", e.target.value)}
+                              className={cellInput}
+                            />
+                          </td>
+                          <td className="px-3 py-1.5">
+                            <input
+                              type="date"
+                              value={row.period_end}
+                              onChange={(e) => updateRow(i, "period_end", e.target.value)}
+                              className={cellInput}
+                            />
+                          </td>
+                          <td className="px-3 py-1.5">
+                            <NumberField value={row.net_of_vat} onChange={(v) => updateRow(i, "net_of_vat", v)} />
+                          </td>
+                          <td className="px-3 py-1.5">
+                            <NumberField value={row.vat} onChange={(v) => updateRow(i, "vat", v)} />
+                          </td>
+                          <td className="px-3 py-1.5">
+                            <NumberField value={row.wtax} onChange={(v) => updateRow(i, "wtax", v)} />
+                          </td>
+                          <td className="px-2 py-1.5 text-center">
+                            <button
+                              type="button"
+                              onClick={() => removeRow(i)}
+                              disabled={rows.length <= 1}
+                              title="Remove row"
+                              className={`${iconBtn} disabled:opacity-30 disabled:cursor-not-allowed`}
+                            >
+                              <Trash2 size={15} />
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                {rows.length > 0 && (
+                  <p className="mt-2 text-xs text-gray-400">
+                    e.g. Year {rows[0].year}: {formatDisplayDate(rows[0].period_start) || "Jan 01"} -{" "}
+                    {formatDisplayDate(rows[0].period_end) || "Dec 31"}
+                  </p>
+                )}
+
+                {formError && (
+                  <p className="mt-3 text-xs font-medium text-red-600">{formError}</p>
+                )}
+              </div>
+
+              <div className="flex justify-end gap-2 px-6 py-4 border-t border-gray-100 shrink-0">
+                <button type="button" onClick={closeModal} disabled={loading} className={btnGhost}>
+                  Cancel
+                </button>
+                <button type="submit" disabled={loading} className={btnPrimary}>
+                  {loading ? "Saving..." : editTarget ? "Save Changes" : "Add Rent Fee"}
                 </button>
               </div>
-
-              <div className="overflow-x-auto border rounded-xl border-slate-200">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="bg-slate-50 text-slate-500">
-                      <th className="px-3 py-2 font-bold text-left">Code</th>
-                      <th className="px-3 py-2 font-bold text-left">Year</th>
-                      <th className="px-3 py-2 font-bold text-left">Period Start</th>
-                      <th className="px-3 py-2 font-bold text-left">Period End</th>
-                      <th className="px-3 py-2 font-bold text-right">Net of VAT</th>
-                      <th className="px-3 py-2 font-bold text-right">VAT</th>
-                      <th className="px-3 py-2 font-bold text-right">WTAX</th>
-                      <th className="px-3 py-2"></th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {rows.map((row, i) => (
-                      <tr key={i} className="border-t border-slate-100">
-                        <td className="px-3 py-2 text-xs font-bold text-blue-700">
-                          {rfCode}
-                        </td>
-                        <td className="px-3 py-2 font-bold text-center text-slate-700">
-                          {row.year}
-                        </td>
-                        <td className="px-3 py-1.5">
-                          <input
-                            type="date"
-                            value={row.period_start}
-                            onChange={(e) => updateRow(i, "period_start", e.target.value)}
-                            className="w-full px-2 py-1.5 text-xs border rounded-md border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-200"
-                          />
-                        </td>
-                        <td className="px-3 py-1.5">
-                          <input
-                            type="date"
-                            value={row.period_end}
-                            onChange={(e) => updateRow(i, "period_end", e.target.value)}
-                            className="w-full px-2 py-1.5 text-xs border rounded-md border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-200"
-                          />
-                        </td>
-                        <td className="px-3 py-1.5">
-                          <NumberField
-                            value={row.net_of_vat}
-                            onChange={(v) => updateRow(i, "net_of_vat", v)}
-                          />
-                        </td>
-                        <td className="px-3 py-1.5">
-                          <NumberField
-                            value={row.vat}
-                            onChange={(v) => updateRow(i, "vat", v)}
-                          />
-                        </td>
-                        <td className="px-3 py-1.5">
-                          <NumberField
-                            value={row.wtax}
-                            onChange={(v) => updateRow(i, "wtax", v)}
-                          />
-                        </td>
-                        <td className="px-2 py-1.5 text-center">
-                          <button
-                            onClick={() => removeRow(i)}
-                            disabled={rows.length <= 1}
-                            className="text-slate-300 hover:text-red-500 disabled:opacity-30 disabled:cursor-not-allowed"
-                          >
-                            <Trash2 size={16} />
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-
-              {rows.length > 0 && (
-                <p className="mt-2 text-xs font-medium text-slate-400">
-                  e.g. Year {rows[0].year}: {formatDisplayDate(rows[0].period_start) || "Jan 01"} -{" "}
-                  {formatDisplayDate(rows[0].period_end) || "Dec 31"}
-                </p>
-              )}
-            </div>
-
-            <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-slate-100 bg-slate-50">
-              <button
-                onClick={() => setModalOpen(false)}
-                className="px-4 py-2 text-sm font-semibold rounded-lg text-slate-600 hover:bg-slate-100"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleSubmit}
-                disabled={loading}
-                className="px-5 py-2 text-sm font-bold text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50"
-              >
-                {loading ? "Saving..." : "Save"}
-              </button>
-            </div>
+            </form>
           </div>
         </div>
       )}
@@ -493,10 +501,14 @@ const RentFees = () => {
         onClose={() => setDeleteRowTarget(null)}
         onConfirm={handleDeleteRow}
         loading={deleteRowLoading}
+        title="Delete schedule row?"
+        name={
+          deleteRowTarget
+            ? `Year ${deleteRowTarget.year} · ${formatDisplayDate(deleteRowTarget.period_start)} - ${formatDisplayDate(deleteRowTarget.period_end)}`
+            : undefined
+        }
       />
-
-      <Toast msg={toast.msg} type={toast.type} />
-    </>
+    </div>
   );
 };
 

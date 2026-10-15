@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { createPortal } from "react-dom";
-import { supabase } from "../../lib/supabaseClient";
+import { supabase, notificationAPI } from "../../lib/supabaseClient";
 import {
   FaSearch,
   FaTimes,
@@ -52,6 +52,10 @@ function newRow() {
     description: "",
     period_covered: "",
     amount: "",
+    // Defaults to "income" until an account is actually picked — see
+    // pickCoaForRow() / selectClient(), which set this automatically from
+    // the account's agency → fee_groups.category chain.
+    item_type: "income",
   };
 }
 
@@ -88,6 +92,7 @@ function buildSOAEmailHTML({
   totalDue,
   notes,
   approvedBy,
+  preparedBy = "",
   logoBase64 = "",
 }) {
   const fmtN = (n) =>
@@ -388,8 +393,8 @@ function buildSOAEmailHTML({
       <td style="padding:16px 24px;font-size:9.5px;color:#555;width:50%;">
         Prepared by:<br/>
         <div style="border-bottom:1px solid #999;height:32px;margin:6px 0;"></div>
-        <strong style="color:#333;">${approvedBy || "Billing Officer"}</strong><br/>
-        <span>Billing Officer</span>
+        <strong style="color:#333;">${preparedBy || "—"}</strong><br/>
+                <span>Billing Officer</span>
       </td>
       <td style="padding:16px 24px;font-size:9.5px;color:#555;width:50%;">
         Received By:<br/>
@@ -583,6 +588,53 @@ export default function CreateBilling({ currentUser }) {
     );
   };
 
+  // ── Automatic income/remittance classification ──────────────────────────
+  // A single source of truth: an account's fee_groups.category (via its
+  // agency's group_id). Anything that isn't explicitly "remittance" is
+  // treated as "income" — matches the billing_items check constraint.
+  const classifyCategory = (category) =>
+    category === "remittance" ? "remittance" : "income";
+  // Convert saved client taxes (client_tax_setup) into billing rows
+  const fetchTaxRows = async (clientUuid) => {
+    const { data: taxes } = await supabase
+      .from("client_tax_setup")
+      .select("*")
+      .eq("client_id", clientUuid)
+      .eq("is_active", true);
+    if (!taxes?.length) return [];
+
+    const { data: coas } = await supabase
+      .from("chart_of_accounts")
+      .select(
+        "code, account_name, tax_setup_id, tax_setup(tax_type), government_agencies(name, fee_groups(category))",
+      )
+      .eq("is_active", true)
+      .not("tax_setup_id", "is", null);
+
+    const coaByTax = {};
+    (coas || []).forEach((c) => {
+      if (c.tax_setup?.tax_type) coaByTax[c.tax_setup.tax_type] = c;
+    });
+
+    return taxes
+      .map((t) => {
+        const coa = coaByTax[t.tax_type];
+        const amount =
+          t.computation_type === "fixed" || t.computation_type === "manual"
+            ? Number(t.fixed_amount) || 0
+            : Number(t.payable) || 0; // percentage = total w/ tax, table = payable
+        return {
+          id: Date.now() + Math.random(),
+          account_code: coa?.code || "",
+          agency: coa?.government_agencies?.name || "",
+          description: coa?.account_name || t.tax_type,
+          period_covered: "",
+          amount,
+          item_type: classifyCategory(coa?.government_agencies?.fee_groups?.category),
+        };
+      })
+      .filter((r) => r.amount !== 0);
+  };
   const selectClient = async (c) => {
     skipSearchRef.current = true;
     setSelectedClient(c);
@@ -592,25 +644,41 @@ export default function CreateBilling({ currentUser }) {
     setShowClientDrop(false);
     setClientResults([]);
 
+    // NOTE: classification is pulled straight from this query's own nested
+    // government_agencies → fee_groups.category — NOT from a separately
+    // fetched lookup table. That's what makes it automatic and reliable
+    // regardless of whether fetchAgencies() has finished loading yet.
     const { data: feeItems, error } = await supabase
       .from("fee_items")
       .select(
-        "amount, item_name, agency_id, coa_id, rent_fee_id, chart_of_accounts(code, account_name, billing_mode), government_agencies(name), rent_fees(rf_code, rent_fee_details(*))",
+        "amount, item_name, agency_id, coa_id, rent_fee_id, chart_of_accounts(code, account_name, billing_mode), government_agencies(name, fee_groups(category)), rent_fees(rf_code, rent_fee_details(*))",
       )
       .eq("client_id", c.id)
       .eq("is_active", true)
       .eq("chart_of_accounts.is_active", true);
 
-    if (!error && feeItems && feeItems.length > 0) {
-      const flatRows = [];
-      const scheduleRows = [];
+    const taxRows = await fetchTaxRows(c.id);
 
-      feeItems.forEach((fi) => {
+    if (!error && feeItems && feeItems.length > 0) {      const flatRows = [];
+      const scheduleRows = [];
+          feeItems.forEach((fi) => {
         const code = fi.chart_of_accounts?.code || "";
         const agencyName = fi.government_agencies?.name || "";
         const accountName =
           fi.chart_of_accounts?.account_name || fi.item_name || "";
         const isSchedule = fi.chart_of_accounts?.billing_mode === "schedule";
+
+        // Skip retainer placeholder row (0 amount) — nasa schedule section na ang retainer fee
+        if (
+          !isSchedule &&
+          agencyName.toUpperCase() === "RETAINER" &&
+          !Number(fi.amount)
+        )
+          return;
+
+        const itemType = classifyCategory(
+          fi.government_agencies?.fee_groups?.category,
+        );
 
         if (isSchedule && fi.rent_fees) {
           const details = (fi.rent_fees.rent_fee_details || [])
@@ -622,6 +690,7 @@ export default function CreateBilling({ currentUser }) {
             description: accountName,
             rf_code: fi.rent_fees.rf_code,
             details,
+            item_type: itemType,
           });
         } else {
           flatRows.push({
@@ -631,14 +700,16 @@ export default function CreateBilling({ currentUser }) {
             description: accountName,
             period_covered: "",
             amount: fi.amount ?? "",
+            item_type: itemType,
           });
         }
       });
 
-      setItems(flatRows.length ? flatRows : [newRow()]);
+         const allRows = [...flatRows, ...taxRows];
+      setItems(allRows.length ? allRows : [newRow()]);
       setScheduleAccounts(scheduleRows);
     } else {
-      setItems([newRow()]);
+      setItems(taxRows.length ? taxRows : [newRow()]);
       setScheduleAccounts([]);
     }
   };
@@ -667,10 +738,16 @@ export default function CreateBilling({ currentUser }) {
     fetchPeriods();
   }, [fetchPeriods]);
 
+  // Only used to populate the (disabled) Agency dropdown in the items
+  // table. Income/remittance classification no longer depends on this
+  // list — see selectClient() / pickCoaForRow(), which read the category
+  // straight off each account's own query — so there's no race condition
+  // between "did agencies finish loading" and "did the client's fee items
+  // load".
   const fetchAgencies = useCallback(async () => {
     const { data } = await supabase
       .from("government_agencies")
-      .select("id, name")
+      .select("id, name, group_id")
       .eq("is_active", true)
       .order("name");
     setAgencies(data || []);
@@ -685,7 +762,7 @@ export default function CreateBilling({ currentUser }) {
     setCoaLoading(true);
     const { data, error } = await supabase
       .from("chart_of_accounts")
-      .select("*")
+      .select("*, government_agencies(name, fee_groups(category))")
       .eq("is_active", true)
       .order("agency", { ascending: true })
       .order("account_name", { ascending: true });
@@ -710,14 +787,22 @@ export default function CreateBilling({ currentUser }) {
   };
 
   const pickCoaForRow = (rowId, acct) => {
+    // Automatic classification here too — same rule as selectClient(), so
+    // a manually-picked account is never accidentally left as "income"
+    // when it actually belongs to a remittance group.
+    const itemType = classifyCategory(
+      acct.government_agencies?.fee_groups?.category,
+    );
     setItems((p) =>
       p.map((i) =>
         i.id === rowId
           ? {
               ...i,
               account_code: acct.code || "",
+              agency: acct.agency || acct.government_agencies?.name || i.agency,
               description: acct.account_name || "",
               amount: acct.default_amount || "",
+              item_type: itemType,
             }
           : i,
       ),
@@ -732,12 +817,15 @@ export default function CreateBilling({ currentUser }) {
       p.map((i) => {
         if (i.id !== id) return i;
         if (field === "agency" && val !== i.agency) {
+          // Changing agency invalidates whatever account/classification
+          // was picked before — reset until a new account is chosen.
           return {
             ...i,
             agency: val,
             account_code: "",
             description: "",
             amount: "",
+            item_type: "income",
           };
         }
         return { ...i, [field]: val };
@@ -811,20 +899,21 @@ export default function CreateBilling({ currentUser }) {
     totalDue,
     notes,
   });
-// ── Flatten schedule (retainer fee) rows into billing_items shape ──
-const buildScheduleItemRows = (scheduleAccounts) =>
-  (scheduleAccounts || []).flatMap((acc) =>
-    (acc.details || []).map((d) => ({
-      account_code: acc.account_code || "",
-      agency: acc.agency || "",
-      description: `${acc.description}${acc.rf_code ? ` (${acc.rf_code})` : ""} - Yr ${d.year}`,
-      period_covered: `${fmtFullDate(d.period_start)} – ${fmtFullDate(d.period_end)}`,
-      amount:
-        (parseFloat(d.net_of_vat) || 0) +
-        (parseFloat(d.vat) || 0) -
-        (parseFloat(d.wtax) || 0),
-    })),
-  );
+  // ── Flatten schedule (retainer fee) rows into billing_items shape ──
+  const buildScheduleItemRows = (scheduleAccounts) =>
+    (scheduleAccounts || []).flatMap((acc) =>
+      (acc.details || []).map((d) => ({
+        account_code: acc.account_code || "",
+        agency: acc.agency || "",
+        description: `${acc.description}${acc.rf_code ? ` (${acc.rf_code})` : ""} - Yr ${d.year}`,
+        period_covered: `${fmtFullDate(d.period_start)} – ${fmtFullDate(d.period_end)}`,
+        amount:
+          (parseFloat(d.net_of_vat) || 0) +
+          (parseFloat(d.vat) || 0) -
+          (parseFloat(d.wtax) || 0),
+        item_type: acc.item_type || "income",
+      })),
+    );
   // ── Core DB upsert ──
   const upsertBilling = async (status, filledItems) => {
     const payload = {
@@ -842,25 +931,39 @@ const buildScheduleItemRows = (scheduleAccounts) =>
 
     let bill;
     if (savedBillingId) {
+      const updatePayload =
+        status === "approved"
+          ? {
+              ...payload,
+              approved_by: userFullName,
+              approved_at: new Date().toISOString(),
+            }
+          : payload;
+
       const { data, error } = await supabase
         .from("billing_statements")
-        .update(payload)
+        .update(updatePayload)
         .eq("id", savedBillingId)
         .select()
         .single();
       if (error) throw error;
       bill = data;
-      await supabase
-        .from("billing_statements")
-        .update({
-          approved_by: userFullName,
-          approved_at: new Date().toISOString(),
-        })
-        .eq("soa_number", soaNumber);
     } else {
       const { data, error } = await supabase
         .from("billing_statements")
-        .insert([payload])
+        .insert([
+          {
+            ...payload,
+            created_by: currentUser?.id || null,
+            created_by_name: userFullName,
+            ...(status === "approved"
+              ? {
+                  approved_by: userFullName,
+                  approved_at: new Date().toISOString(),
+                }
+              : {}),
+          },
+        ])
         .select()
         .single();
       if (error) throw error;
@@ -868,22 +971,29 @@ const buildScheduleItemRows = (scheduleAccounts) =>
       setSavedBillingId(bill.id);
     }
 
-const allItemRows = [...filledItems, ...buildScheduleItemRows(scheduleAccounts)];
+    const allItemRows = [
+      ...filledItems,
+      ...buildScheduleItemRows(scheduleAccounts),
+    ];
 
-const { error: itemErr } = await supabase.from("billing_items").insert(
-  allItemRows.map((i) => ({
-    billing_id: bill.id,
-    account_code: i.account_code || null,
-    agency: i.agency,
-    description: i.description,
-    period_covered: i.period_covered,
-    amount: parseFloat(i.amount) || 0,
-  })),
-);
-if (itemErr) throw itemErr;
-return bill;
-};
+    if (savedBillingId) {
+      await supabase.from("billing_items").delete().eq("billing_id", bill.id);
+    }
 
+    const { error: itemErr } = await supabase.from("billing_items").insert(
+      allItemRows.map((i) => ({
+        billing_id: bill.id,
+        account_code: i.account_code || null,
+        agency: i.agency,
+        description: i.description,
+        period_covered: i.period_covered,
+        amount: parseFloat(i.amount) || 0,
+        item_type: i.item_type || "income",
+      })),
+    );
+    if (itemErr) throw itemErr;
+    return bill;
+  };
 
   // ── Save as Draft ──
   const handleSaveDraft = async () => {
@@ -892,11 +1002,27 @@ return bill;
     setSaving(true);
     setShowSaveDrop(false);
     try {
-      await upsertBilling("draft", filledItems);
+      const isFirstSave = !savedBillingId; // kunin bago mag-upsert
+      const bill = await upsertBilling("draft", filledItems);
       setSoaStatus("draft");
       setMessage("SOA saved as draft.");
       setMessageType("success");
       setSavedBilling(buildSnapshot(filledItems));
+
+      // Notify lang sa unang save ng draft
+      if (isFirstSave && currentUser?.id) {
+        try {
+          await notificationAPI.notifyUser(currentUser.id, {
+            type: "billing_draft",
+            title: "Billing saved as draft",
+            message: `${billTo} – ${soaNumber} saved as draft`,
+            link: "/billing",
+            reference_id: String(bill.id),
+          });
+        } catch (notifErr) {
+          console.error("Notification failed:", notifErr);
+        }
+      }
     } catch (err) {
       setMessage(`Error: ${err.message}`);
       setMessageType("error");
@@ -905,6 +1031,7 @@ return bill;
     setTimeout(() => setMessage(""), 4000);
   };
 
+
   // ── Submit for Approval ──
   const handleSubmitForApproval = async () => {
     const filledItems = validate();
@@ -912,11 +1039,40 @@ return bill;
     setSaving(true);
     setShowSaveDrop(false);
     try {
-      await upsertBilling("pending_approval", filledItems);
+      const bill = await upsertBilling("pending_approval", filledItems);
       setSoaStatus("pending_approval");
       setMessage("SOA submitted for approval.");
       setMessageType("success");
       setSavedBilling(buildSnapshot(filledItems));
+
+      // Notify approvers (hindi dapat mag-fail ang submit kahit pumalpak ito)
+         try {
+        // Sa mga approver
+        await notificationAPI.notifyByPermission(
+          "SOAApproval",
+          {
+            type: "billing_pending_approval",
+            title: "New billing for approval",
+            message: `${billTo} – ${soaNumber} submitted by ${userFullName}`,
+            link: "/billing/approvals",
+            reference_id: String(bill.id),
+          },
+          currentUser?.id,
+        );
+
+        // Sa mismong gumawa (naka-login)
+        if (currentUser?.id) {
+          await notificationAPI.notifyUser(currentUser.id, {
+            type: "billing_submitted",
+            title: "Billing submitted",
+            message: `${billTo} – ${soaNumber} was submitted for approval`,
+            link: "/billing",
+            reference_id: String(bill.id),
+          });
+        }
+      } catch (notifErr) {
+        console.error("Notification failed:", notifErr);
+      }
     } catch (err) {
       setMessage(`Error: ${err.message}`);
       setMessageType("error");
@@ -944,7 +1100,20 @@ return bill;
     setSaving(false);
     setTimeout(() => setMessage(""), 4000);
   };
-
+  const notifyCreatorApproved = async (bill) => {
+    try {
+      if (!bill?.created_by) return;
+      await notificationAPI.notifyUser(bill.created_by, {
+        type: "billing_approved",
+        title: "Billing approved",
+        message: `${billTo} – ${soaNumber} was approved by ${userFullName}`,
+        link: "/billing",
+        reference_id: String(bill.id),
+      });
+    } catch (e) {
+      console.error("Notification failed:", e);
+    }
+  };
   // ── Approve & Email ──
   // FIX: now generates htmlBody via buildSOAEmailHTML and passes it to the edge function
   const handleApproveAndEmail = async () => {
@@ -971,8 +1140,9 @@ return bill;
 
     setApproving(true);
     try {
-      await upsertBilling("approved", filledItems);
+          const bill = await upsertBilling("approved", filledItems);
       setSoaStatus("approved");
+      await notifyCreatorApproved(bill);
 
       // Generate the styled HTML email body
       const htmlBody = buildSOAEmailHTML({
@@ -992,8 +1162,10 @@ return bill;
         totalDue,
         notes,
         approvedBy: userFullName,
+        preparedBy: bill.created_by_name || userFullName,
         logoBase64,
       });
+    
 
       const res = await fetch(
         `${process.env.REACT_APP_SUPABASE_URL}/functions/v1/send-soa-email`,
@@ -1057,8 +1229,9 @@ return bill;
     setApproving(true);
     setShowApproveDrop(false);
     try {
-      await upsertBilling("approved", filledItems);
+      const bill = await upsertBilling("approved", filledItems);
       setSoaStatus("approved");
+      await notifyCreatorApproved(bill);
       setMessage("SOA approved successfully.");
       setMessageType("success");
     } catch (err) {

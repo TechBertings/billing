@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Landmark, ExternalLink, CheckCircle2, Zap } from "lucide-react";
+import { Landmark, ExternalLink } from "lucide-react";
 import { supabase } from "../lib/supabaseClient";
 import CustomerMaintenanceTable, {
   MaintenanceModal,
@@ -30,8 +30,8 @@ const emptyForm = {
 
 const FieldLabel = ({ main, hint }) => (
   <span className="inline-flex flex-wrap items-baseline gap-1">
-    <span className="font-medium text-gray-700">{main}</span>
-    {hint && <span className="text-xs font-normal text-gray-400">({hint})</span>}
+    <span>{main}</span>
+    {hint && <span className="font-normal text-gray-400">({hint})</span>}
   </span>
 );
 
@@ -39,10 +39,11 @@ const FieldLabel = ({ main, hint }) => (
 // standalone field entry) since MaintenanceModal renders every field
 // object as an input row, sections included.
 const SectionLabel = ({ children }) => (
-  <div className="mb-2 mt-1 border-b border-gray-200 pb-1 text-xs font-bold uppercase tracking-wider text-gray-800">
+  <div className="pb-1 mt-2 mb-3 text-xs font-semibold text-gray-800 border-b border-gray-200">
     {children}
   </div>
 );
+
 // Adds display-friendly derived fields so they can be shown as plain
 // columns in CustomerMaintenanceTable (which just reads row[col.key]).
 const withDisplayFields = (row) => ({
@@ -57,7 +58,7 @@ const withDisplayFields = (row) => ({
 const DEFAULT_SSS_ROUTE = "/sss-table-setup";
 
 const ContributionRates = ({ onNavigateToSSS }) => {
-    const [rates, setRates] = useState([]);
+  const [rates, setRates] = useState([]);
   const [search, setSearch] = useState("");
   const [fetching, setFetching] = useState(true);
 
@@ -205,7 +206,7 @@ const ContributionRates = ({ onNavigateToSSS }) => {
         .eq("id", editTarget.id);
       if (error) showToast(`Update failed: ${error.message}`, "error");
       else {
-        showToast("Contribution rates updated!");
+        showToast("Contribution rates updated.");
         fetchRates();
       }
     } else {
@@ -214,7 +215,7 @@ const ContributionRates = ({ onNavigateToSSS }) => {
         .insert(payload);
       if (error) showToast(`Insert failed: ${error.message}`, "error");
       else {
-        showToast("Contribution rates added!");
+        showToast("Contribution rates added.");
         fetchRates();
       }
     }
@@ -247,26 +248,25 @@ const ContributionRates = ({ onNavigateToSSS }) => {
   };
 
   // ── Delete ──
-// ── Delete ──
-const handleDelete = async () => {
-  if (deleteTarget?.status) {
-    showToast("Can't delete the active schedule. Activate another one first.", "error");
+  const handleDelete = async () => {
+    if (deleteTarget?.status) {
+      showToast("Can't delete the active schedule. Activate another one first.", "error");
+      setDeleteTarget(null);
+      return;
+    }
+    setDeleteLoading(true);
+    const { error } = await supabase
+      .from("contribution_config")
+      .delete()
+      .eq("id", deleteTarget.id);
+    if (error) showToast("Delete failed.", "error");
+    else {
+      showToast("Contribution rate schedule deleted.");
+      fetchRates();
+    }
+    setDeleteLoading(false);
     setDeleteTarget(null);
-    return;
-  }
-  setDeleteLoading(true);
-  const { error } = await supabase
-    .from("contribution_config")
-    .delete()
-    .eq("id", deleteTarget.id);
-  if (error) showToast("Delete failed.", "error");
-  else {
-    showToast("Contribution rate schedule deleted!");
-    fetchRates();
-  }
-  setDeleteLoading(false);
-  setDeleteTarget(null);
-};
+  };
 
   // ── Filter ──
   const filtered = rates.filter((r) =>
@@ -275,78 +275,77 @@ const handleDelete = async () => {
 
   return (
     <>
-   {/* Read-only SSS summary + link to the dedicated SSS page. SSS is
-    no longer configured here — this card is just for visibility. */}
-<div className="mb-4 flex items-center justify-between rounded-lg border border-gray-200 bg-gray-50 px-4 py-3">
-  <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-gray-600">
-    <span className="font-semibold text-gray-800">SSS</span>
-    <span className="text-gray-400">managed separately ·</span>
-    {sssSummaryLoading ? (
-      <span className="text-gray-400">loading…</span>
-    ) : (
-      <>
-        <span className="inline-flex items-center rounded-md bg-white px-2 py-0.5 text-xs font-medium text-gray-700 ring-1 ring-gray-200">
-          {sssSummary.bracketCount} bracket{sssSummary.bracketCount === 1 ? "" : "s"}
-        </span>
-        {sssSummary.activeRate && (
-          <span className="inline-flex items-center rounded-md bg-white px-2 py-0.5 text-xs font-medium text-gray-700 ring-1 ring-gray-200">
-            EE {fmtPct(sssSummary.activeRate.ee_rate)} / ER {fmtPct(sssSummary.activeRate.er_rate)}
-          </span>
-        )}
-      </>
-    )}
-  </div>
-  <button
-    type="button"
-    onClick={onNavigateToSSS}
-    className="flex items-center gap-1.5 text-sm text-blue-600 hover:text-blue-800 font-medium whitespace-nowrap"
-  >
-    Manage SSS Brackets & Rates
-    <ExternalLink size={14} />
-  </button>
-</div>
-
+      {/* Read-only SSS summary + link to the dedicated SSS page. SSS is
+          no longer configured here — this card is just for visibility. */}
+      <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 mb-4 bg-white border border-gray-200 rounded-lg">
+        <div className="flex flex-wrap items-center text-sm text-gray-600 gap-x-2 gap-y-1">
+          <span className="font-medium text-gray-800">SSS</span>
+          <span className="text-gray-400">managed separately ·</span>
+          {sssSummaryLoading ? (
+            <span className="text-gray-400">loading…</span>
+          ) : (
+            <>
+              <span className="px-2 py-0.5 font-mono text-xs text-gray-600 bg-gray-100 rounded">
+                {sssSummary.bracketCount} bracket{sssSummary.bracketCount === 1 ? "" : "s"}
+              </span>
+              {sssSummary.activeRate && (
+                <span className="px-2 py-0.5 font-mono text-xs text-gray-600 bg-gray-100 rounded">
+                  EE {fmtPct(sssSummary.activeRate.ee_rate)} / ER {fmtPct(sssSummary.activeRate.er_rate)}
+                </span>
+              )}
+            </>
+          )}
+        </div>
+        <button
+          type="button"
+          onClick={onNavigateToSSS}
+          className="flex items-center gap-1.5 text-sm font-medium text-gray-600 transition whitespace-nowrap hover:text-black"
+        >
+          Manage SSS Brackets & Rates
+          <ExternalLink size={14} />
+        </button>
+      </div>
 
       <CustomerMaintenanceTable
         title="Contribution Rates (PhilHealth & Pag-IBIG)"
-        icon={<Landmark size={22} className="text-blue-600" />}
+        icon={<Landmark size={26} strokeWidth={1.5} className="text-black" />}
         totalCount={rates.length}
         search={search}
         onSearchChange={setSearch}
         onAdd={openAdd}
         addLabel="Add Rate Schedule"
         columns={[
-  {
-  label: "Status",
-  key: "status",
-  render: (row) => (
-    <div className="flex items-center gap-2">
-      <span
-        className={`inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-bold tracking-wider ${
-          row.status
-            ? "bg-green-100 text-green-700"
-            : "bg-slate-100 text-slate-500"
-        }`}
-      >
-        {row.status ? "Active" : "Inactive"}
-      </span>
-      {!row.status && (
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            handleSetActive(row);
-          }}
-          disabled={loading}
-          title="Make this the active schedule"
-          className="text-xs font-medium text-blue-600 hover:text-blue-800 disabled:opacity-50"
-        >
-          Activate
-        </button>
-      )}
-    </div>
-  ),
-},
+          {
+            label: "Status",
+            key: "status",
+            render: (row) => (
+              <div className="flex items-center gap-3">
+                <span
+                  className={`px-2 py-0.5 text-xs font-medium rounded ${
+                    row.status
+                      ? "text-white bg-gray-900"
+                      : "text-gray-500 bg-gray-100"
+                  }`}
+                >
+                  {row.status ? "Active" : "Inactive"}
+                </span>
+                {!row.status && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleSetActive(row);
+                    }}
+                    disabled={loading}
+                    title="Make this the active schedule"
+                    className="text-xs font-medium text-gray-500 underline transition hover:text-black disabled:opacity-50"
+                  >
+                    Activate
+                  </button>
+                )}
+              </div>
+            ),
+          },
           { label: "Effective Date", key: "effective_date", badge: true },
           { label: "PHIC Rate", key: "phic_display" },
           { label: "HDMF Cap", key: "hdmf_display" },
@@ -365,77 +364,82 @@ const handleDelete = async () => {
             ? "Edit Contribution Rate Schedule"
             : "Add Contribution Rate Schedule"
         }
+        subtitle={
+          editTarget
+            ? "Update this rate schedule."
+            : "Create a new rate schedule."
+        }
         onClose={() => setModalOpen(false)}
         onSubmit={handleSubmit}
         loading={loading}
-fields={[
-  {
-    label: <FieldLabel main="Effective Date" hint="YYYY-MM-DD" />,
-    value: form.effective_date,
-    onChange: handleFieldChange("effective_date"),
-    placeholder: "2026-07-07",
-  },
-  {
-    label: <FieldLabel main="Status" hint="only one schedule can be active at a time" />,
-    value: form.status,
-    onChange: handleFieldChange("status"),
-    type: "select",
-    options: [
-      { value: "false", label: "Inactive" },
-      { value: "true", label: "Active" },
-    ],
-  },
-  {
-    label: (
-      <>
-        <SectionLabel>PhilHealth</SectionLabel>
-        <FieldLabel main="Rate" hint="0.05 = 5%" />
-      </>
-    ),
-    value: form.phic_rate,
-    onChange: handleFieldChange("phic_rate"),
-  },
-  {
-    label: <FieldLabel main="Salary Floor" />,
-    value: form.phic_floor,
-    onChange: handleFieldChange("phic_floor"),
-  },
-  {
-    label: <FieldLabel main="Salary Ceiling" />,
-    value: form.phic_ceiling,
-    onChange: handleFieldChange("phic_ceiling"),
-  },
-  {
-    label: (
-      <>
-        <SectionLabel>Pag-IBIG</SectionLabel>
-        <FieldLabel main="Low-Salary Threshold" />
-      </>
-    ),
-    value: form.hdmf_low_threshold,
-    onChange: handleFieldChange("hdmf_low_threshold"),
-  },
-  {
-    label: <FieldLabel main="EE Rate" hint="below threshold" />,
-    value: form.hdmf_ee_rate_low,
-    onChange: handleFieldChange("hdmf_ee_rate_low"),
-  },
-  {
-    label: <FieldLabel main="EE Rate" hint="above threshold" />,
-    value: form.hdmf_ee_rate_high,
-    onChange: handleFieldChange("hdmf_ee_rate_high"),
-  },
-  {
-    label: <FieldLabel main="ER Rate" />,
-    value: form.hdmf_er_rate,
-    onChange: handleFieldChange("hdmf_er_rate"),
-  },
-  {
-    label: <FieldLabel main="Max Fund Salary" hint="cap" />,
-    value: form.hdmf_cap_salary,
-    onChange: handleFieldChange("hdmf_cap_salary"),
-  },
-]}
+        fields={[
+          {
+            label: <FieldLabel main="Effective Date" hint="YYYY-MM-DD" />,
+            value: form.effective_date,
+            onChange: handleFieldChange("effective_date"),
+            placeholder: "2026-07-07",
+          },
+          {
+            label: <FieldLabel main="Status" hint="only one schedule can be active at a time" />,
+            value: form.status,
+            onChange: handleFieldChange("status"),
+            type: "select",
+            options: [
+              { value: "false", label: "Inactive" },
+              { value: "true", label: "Active" },
+            ],
+          },
+          {
+            label: (
+              <>
+                <SectionLabel>PhilHealth</SectionLabel>
+                <FieldLabel main="Rate" hint="0.05 = 5%" />
+              </>
+            ),
+            value: form.phic_rate,
+            onChange: handleFieldChange("phic_rate"),
+          },
+          {
+            label: <FieldLabel main="Salary Floor" />,
+            value: form.phic_floor,
+            onChange: handleFieldChange("phic_floor"),
+          },
+          {
+            label: <FieldLabel main="Salary Ceiling" />,
+            value: form.phic_ceiling,
+            onChange: handleFieldChange("phic_ceiling"),
+          },
+          {
+            label: (
+              <>
+                <SectionLabel>Pag-IBIG</SectionLabel>
+                <FieldLabel main="Low-Salary Threshold" />
+              </>
+            ),
+            value: form.hdmf_low_threshold,
+            onChange: handleFieldChange("hdmf_low_threshold"),
+          },
+          {
+            label: <FieldLabel main="EE Rate" hint="below threshold" />,
+            value: form.hdmf_ee_rate_low,
+            onChange: handleFieldChange("hdmf_ee_rate_low"),
+          },
+          {
+            label: <FieldLabel main="EE Rate" hint="above threshold" />,
+            value: form.hdmf_ee_rate_high,
+            onChange: handleFieldChange("hdmf_ee_rate_high"),
+          },
+          {
+            label: <FieldLabel main="ER Rate" />,
+            value: form.hdmf_er_rate,
+            onChange: handleFieldChange("hdmf_er_rate"),
+          },
+          {
+            label: <FieldLabel main="Max Fund Salary" hint="cap" />,
+            value: form.hdmf_cap_salary,
+            onChange: handleFieldChange("hdmf_cap_salary"),
+          },
+        ]}
       />
 
       <DeleteModal
@@ -443,6 +447,8 @@ fields={[
         onClose={() => setDeleteTarget(null)}
         onConfirm={handleDelete}
         loading={deleteLoading}
+        title="Delete rate schedule?"
+        name={deleteTarget?.effective_date}
       />
 
       <Toast msg={toast.msg} type={toast.type} />

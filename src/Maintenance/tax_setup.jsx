@@ -1,10 +1,57 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { supabase } from "../lib/supabaseClient";
-import { FaPlus, FaEdit, FaTrash, FaCheckCircle, FaTimes, FaToggleOn, FaToggleOff, FaLink } from "react-icons/fa";
+import {
+  Plus,
+  Pencil,
+  Trash2,
+  X,
+  Check,
+  AlertTriangle,
+  Link2,
+  ToggleLeft,
+  ToggleRight,
+  Calculator,
+} from "lucide-react";
 
-const inputCls =
-  "w-full px-3 py-2 text-sm border border-gray-200 rounded-md focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-100 bg-white transition";
-const labelCls = "block text-xs font-medium text-gray-500 mb-1";
+/* ── Shared look (same as tax_type / business_registration / etc.) ── */
+const inputCls   = "w-full px-3 py-2 text-sm bg-white border border-gray-200 rounded-md focus:outline-none focus:border-gray-400 focus:ring-1 focus:ring-gray-200";
+const labelCls   = "block mb-1 text-xs font-medium text-gray-500";
+const btnPrimary = "flex items-center gap-2 px-3.5 py-2 text-sm font-medium text-white transition bg-gray-900 rounded-md hover:bg-black disabled:opacity-50";
+const btnGhost   = "px-3.5 py-2 text-sm font-medium text-gray-600 transition bg-white border border-gray-200 rounded-md hover:bg-gray-50 disabled:opacity-50";
+const btnDanger  = "flex items-center gap-2 px-3.5 py-2 text-sm font-medium text-white transition bg-red-600 rounded-md hover:bg-red-700 disabled:opacity-50";
+const iconBtn    = "p-1.5 text-gray-400 transition rounded-md hover:bg-gray-100 hover:text-black";
+
+const Toast = ({ toast }) =>
+  toast && (
+    <div
+      className={`fixed z-50 flex items-center gap-2 px-4 py-2.5 text-sm font-medium bg-white border rounded-md shadow-lg bottom-6 right-6 ${
+        toast.type === "error" ? "text-red-700 border-red-200" : "text-gray-800 border-gray-200"
+      }`}
+    >
+      {toast.type === "error" ? <AlertTriangle size={14} /> : <Check size={14} />}
+      {toast.msg}
+    </div>
+  );
+
+const Modal = ({ title, subtitle, onClose, children }) => (
+  <div
+    className="fixed inset-0 z-40 flex items-center justify-center p-4 bg-black/40"
+    onClick={(e) => e.target === e.currentTarget && onClose()}
+  >
+    <div className="w-full max-w-md max-h-[90vh] flex flex-col bg-white border border-gray-200 rounded-lg shadow-xl">
+      <div className="flex items-start justify-between px-6 pt-5 shrink-0">
+        <div>
+          <h2 className="text-base font-semibold text-gray-800">{title}</h2>
+          {subtitle && <p className="mt-0.5 text-xs text-gray-500">{subtitle}</p>}
+        </div>
+        <button type="button" onClick={onClose} className={iconBtn}>
+          <X size={16} />
+        </button>
+      </div>
+      {children}
+    </div>
+  </div>
+);
 
 const COMPUTATION_TYPES = [
   { value: "fixed", label: "Fixed Amount" },
@@ -29,6 +76,7 @@ function emptyForm() {
 // gumawa ng safe internal key mula sa account name (para sa tax_type column)
 const slugify = (s) =>
   s.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");
+
 // ── Live preview: Percentage — para makita agad ang tax kapag nag-set ng rate ──
 function PercentagePreview({ form, setForm }) {
   const [previewAmount, setPreviewAmount] = useState("");
@@ -63,11 +111,11 @@ function PercentagePreview({ form, setForm }) {
           />
         </div>
       </div>
-      <div className="flex items-center justify-between px-3 py-2 mt-2 text-xs border border-gray-100 rounded-md bg-gray-50">
+      <div className="flex items-center justify-between px-3 py-2 mt-2 text-xs border border-gray-200 rounded-md bg-gray-50">
         <span className="text-gray-500">Preview Tax Due</span>
         <span className="font-mono font-semibold text-gray-800">₱{fmt(tax)}</span>
       </div>
-      <p className="mt-1 text-[10px] text-gray-400">
+      <p className="mt-1 text-xs text-gray-400">
         Ang "Try an Amount" ay para lang sa pag-preview — hindi ito nase-save.
       </p>
     </div>
@@ -125,28 +173,30 @@ function TablePreview({ form, setForm }) {
         </div>
       </div>
 
-      <div className="grid grid-cols-3 gap-2 px-3 py-2 mt-2 text-xs border border-gray-100 rounded-md bg-gray-50">
+      <div className="grid grid-cols-3 gap-2 px-3 py-2 mt-2 text-xs border border-gray-200 rounded-md bg-gray-50">
         <div>
-          <p className="text-[10px] text-gray-400 uppercase">Output Tax</p>
+          <p className="text-xs text-gray-400">Output Tax</p>
           <p className="font-mono font-semibold text-gray-800">₱{fmt(outputTax)}</p>
         </div>
         <div>
-          <p className="text-[10px] text-gray-400 uppercase">Input Tax</p>
+          <p className="text-xs text-gray-400">Input Tax</p>
           <p className="font-mono font-semibold text-gray-800">₱{fmt(inputTax)}</p>
         </div>
         <div>
-          <p className="text-[10px] text-gray-400 uppercase">Payable</p>
+          <p className="text-xs text-gray-400">Payable</p>
           <p className={`font-mono font-semibold ${payable < 0 ? "text-red-600" : "text-gray-800"}`}>
             ₱{fmt(payable)}
           </p>
         </div>
       </div>
-      <p className="mt-1 text-[10px] text-gray-400">
+      <p className="mt-1 text-xs text-gray-400">
         Ang "Try Sales/Purchase" ay para lang sa pag-preview — hindi ito nase-save.
       </p>
     </div>
   );
 }
+
+/* ════════════════════════════ */
 export default function TaxSetup() {
   const [rows, setRows] = useState([]);
   const [linkedCoaByTaxId, setLinkedCoaByTaxId] = useState({}); // { [tax_setup.id]: [coaRow, ...] }
@@ -157,13 +207,12 @@ export default function TaxSetup() {
   const [form, setForm] = useState(emptyForm());
   const [saving, setSaving] = useState(false);
   const [deletingRow, setDeletingRow] = useState(null);
-  const [message, setMessage] = useState("");
-  const [messageType, setMessageType] = useState("");
+  const [deleteSaving, setDeleteSaving] = useState(false);
+  const [toast, setToast] = useState(null);
 
   const flash = (msg, type = "success") => {
-    setMessage(msg);
-    setMessageType(type);
-    setTimeout(() => setMessage(""), 3000);
+    setToast({ msg, type });
+    setTimeout(() => setToast(null), 3000);
   };
 
   // ── FETCH: tax_setup rows ────────────────────────────────────────────────
@@ -304,7 +353,7 @@ export default function TaxSetup() {
           .eq("id", selectedCoa.id);
         if (linkError) throw linkError;
 
-        flash(`✓ "${selectedCoa.account_name}" naka-configure na bilang tax.`);
+        flash(`"${selectedCoa.account_name}" naka-configure na bilang tax.`);
       }
       closeForm();
       refreshAll();
@@ -328,6 +377,7 @@ export default function TaxSetup() {
 
   const handleDelete = async () => {
     if (!deletingRow) return;
+    setDeleteSaving(true);
 
     // 1. tanggalin muna ang link sa mga naka-connect na COA account
     const linked = linkedCoaByTaxId[deletingRow.id] || [];
@@ -338,6 +388,7 @@ export default function TaxSetup() {
         .in("id", linked.map((c) => c.id));
       if (unlinkError) {
         flash(`Error unlinking account: ${unlinkError.message}`, "error");
+        setDeleteSaving(false);
         return;
       }
     }
@@ -350,6 +401,7 @@ export default function TaxSetup() {
     } else {
       flash(`Error: ${error.message}`, "error");
     }
+    setDeleteSaving(false);
     setDeletingRow(null);
   };
 
@@ -358,90 +410,84 @@ export default function TaxSetup() {
       ? `₱${Number(row.default_fixed_amount || 0).toLocaleString("en-PH", { minimumFractionDigits: 2 })}`
       : `${Number(row.default_rate || 0)}%`;
 
+  /* ════════════ RENDER ════════════ */
   return (
     <div>
-      <div className="flex items-start justify-between mb-6">
-        <div>
-          <h2 className="text-xl font-black tracking-tight text-slate-800">Tax Setup</h2>
-          <p className="mt-1 text-sm font-medium text-slate-500">
-            Ilink ang computation rules (Fixed / Percentage / Table / Manual) sa isang existing account mula sa Chart of Accounts
-          </p>
+      <Toast toast={toast} />
+
+      {/* Header */}
+      <div className="flex flex-wrap items-center justify-between gap-4 mb-5">
+        <div className="flex items-center gap-3">
+          <Calculator size={26} strokeWidth={1.5} className="text-black" />
+          <div>
+            <h2 className="text-lg font-semibold text-gray-800">Tax Setup</h2>
+            <p className="text-xs text-gray-500">
+              Ilink ang computation rules (Fixed / Percentage / Table / Manual) sa isang existing account mula sa Chart of Accounts
+            </p>
+          </div>
         </div>
-        <button
-          onClick={openAdd}
-          className="flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white transition rounded-md"
-          style={{ background: "#1a5c2e" }}
-        >
-          <FaPlus size={11} /> Configure Tax
+        <button onClick={openAdd} className={btnPrimary}>
+          <Plus size={14} /> Configure Tax
         </button>
       </div>
 
-      {message && (
-        <div
-          className={`mb-4 px-4 py-3 rounded-md text-sm flex items-center justify-between border-l-4
-          ${messageType === "success" ? "bg-green-50 border-green-500 text-green-700" : "bg-red-50 border-red-500 text-red-700"}`}
-        >
-          {message}
-          <button onClick={() => setMessage("")}>
-            <FaTimes size={11} />
-          </button>
-        </div>
-      )}
-
+      {/* Table */}
       <div className="overflow-hidden bg-white border border-gray-200 rounded-lg">
         <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-gray-100 bg-gray-50">
-              <th className="px-4 py-2.5 text-left text-[11px] font-semibold text-gray-400">Linked Account</th>
-              <th className="px-4 py-2.5 text-left text-[11px] font-semibold text-gray-400">Computation</th>
-              <th className="px-4 py-2.5 text-left text-[11px] font-semibold text-gray-400">Default</th>
-              <th className="px-4 py-2.5 text-left text-[11px] font-semibold text-gray-400 w-24">Status</th>
-              <th className="px-4 py-2.5 text-right text-[11px] font-semibold text-gray-400 w-24">Actions</th>
+          <thead className="border-b border-gray-100 bg-gray-50">
+            <tr>
+              <th className="px-4 py-2.5 text-xs font-medium text-left text-gray-500">Linked Account</th>
+              <th className="px-4 py-2.5 text-xs font-medium text-left text-gray-500">Computation</th>
+              <th className="px-4 py-2.5 text-xs font-medium text-left text-gray-500">Default</th>
+              <th className="w-24 px-4 py-2.5 text-xs font-medium text-left text-gray-500">Status</th>
+              <th className="w-24 px-4 py-2.5 text-xs font-medium text-right text-gray-500">Actions</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-gray-50">
+          <tbody>
             {loading ? (
-              <tr><td colSpan={5} className="py-10 text-center text-gray-400">Loading...</td></tr>
+              <tr><td colSpan={5} className="py-12 text-center text-gray-400">Loading...</td></tr>
             ) : rows.length === 0 ? (
-              <tr><td colSpan={5} className="py-10 text-center text-gray-400">Wala pang naka-configure na tax.</td></tr>
+              <tr><td colSpan={5} className="py-12 text-center text-gray-400">Wala pang naka-configure na tax.</td></tr>
             ) : (
               rows.map((row) => {
                 const linked = (linkedCoaByTaxId[row.id] || [])[0];
                 return (
-                  <tr key={row.id} className="hover:bg-gray-50/50">
+                  <tr key={row.id} className="border-t border-gray-100 hover:bg-gray-50">
                     <td className="px-4 py-3">
-                      <p className="flex items-center gap-1.5 font-medium text-gray-800">
-                        <FaLink size={9} className="text-gray-300" />
+                      <p className="flex items-center gap-1.5 text-gray-800">
+                        <Link2 size={12} className="text-gray-300" />
                         {linked ? linked.account_name : row.label}
                       </p>
-                      <p className="font-mono text-xs text-gray-400">
+                      <p className="mt-0.5 font-mono text-xs text-gray-400">
                         {linked?.code || "—"} · {linked?.government_agencies?.name || "unlinked"}
                       </p>
                     </td>
-                    <td className="px-4 py-3 text-gray-500 capitalize">{row.computation_type}</td>
-                    <td className="px-4 py-3 font-mono font-semibold text-gray-800">{renderDefault(row)}</td>
+                    <td className="px-4 py-3 text-gray-600 capitalize">{row.computation_type}</td>
                     <td className="px-4 py-3">
-                      <button onClick={() => toggleActive(row)} className="flex items-center gap-1.5">
+                      <span className="px-2 py-0.5 font-mono text-xs text-gray-600 bg-gray-100 rounded">
+                        {renderDefault(row)}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3">
+                      <button
+                        onClick={() => toggleActive(row)}
+                        title={row.is_active ? "Active" : "Inactive"}
+                        className="flex items-center"
+                      >
                         {row.is_active ? (
-                          <FaToggleOn size={20} style={{ color: "#1a5c2e" }} />
+                          <ToggleRight size={24} strokeWidth={1.5} className="text-gray-900" />
                         ) : (
-                          <FaToggleOff size={20} className="text-gray-300" />
+                          <ToggleLeft size={24} strokeWidth={1.5} className="text-gray-300" />
                         )}
                       </button>
                     </td>
                     <td className="px-4 py-3">
-                      <div className="flex items-center justify-end gap-2">
-                        <button
-                          onClick={() => openEdit(row)}
-                          className="p-1.5 text-gray-400 transition rounded hover:text-blue-500 hover:bg-blue-50"
-                        >
-                          <FaEdit size={12} />
+                      <div className="flex items-center justify-end gap-1">
+                        <button onClick={() => openEdit(row)} title="Edit" className={iconBtn}>
+                          <Pencil size={15} />
                         </button>
-                        <button
-                          onClick={() => setDeletingRow(row)}
-                          className="p-1.5 text-gray-400 transition rounded hover:text-red-500 hover:bg-red-50"
-                        >
-                          <FaTrash size={12} />
+                        <button onClick={() => setDeletingRow(row)} title="Delete" className={iconBtn}>
+                          <Trash2 size={15} />
                         </button>
                       </div>
                     </td>
@@ -453,20 +499,18 @@ export default function TaxSetup() {
         </table>
       </div>
 
-      {/* ── ADD / EDIT MODAL ── */}
+      {/* Add / Edit modal */}
       {showForm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-          <div className="w-full max-w-md bg-white rounded-xl shadow-2xl overflow-hidden max-h-[90vh] flex flex-col">
-            <div className="flex items-center justify-between px-5 py-3.5 border-b border-gray-100 shrink-0">
-              <h3 className="text-sm font-semibold text-gray-800">
-                {form.id ? "Edit Tax Config" : "Configure Tax for an Account"}
-              </h3>
-              <button onClick={closeForm} className="p-1.5 text-gray-400 hover:text-gray-600">
-                <FaTimes size={14} />
-              </button>
-            </div>
-
-            <div className="flex-1 p-5 space-y-4 overflow-y-auto">
+        <Modal
+          title={form.id ? "Edit Tax Config" : "Configure Tax for an Account"}
+          subtitle={form.id ? "Update the computation rules." : "Pick an account and set how its tax is computed."}
+          onClose={closeForm}
+        >
+          <form
+            onSubmit={(e) => { e.preventDefault(); handleSave(); }}
+            className="flex flex-col flex-1 min-h-0"
+          >
+            <div className="flex-1 px-6 py-5 space-y-4 overflow-y-auto">
               {/* Account selection — DROPDOWN na mula sa Chart of Accounts, hindi na text input */}
               <div>
                 <label className={labelCls}>Account (from Chart of Accounts)</label>
@@ -481,26 +525,26 @@ export default function TaxSetup() {
                 ) : loadingCoaOptions ? (
                   <p className="text-xs text-gray-400">Loading accounts…</p>
                 ) : coaOptions.length === 0 ? (
-                  <p className="text-xs text-red-400">
+                  <p className="text-xs text-red-600">
                     Wala nang available na account — lahat naka-configure na, o wala pang gawang account sa Chart of Accounts.
                   </p>
                 ) : (
-                <select value={form.coa_id} onChange={(e) => handleSelectCoa(e.target.value)} className={inputCls}>
-                  <option value="">— Pumili ng account —</option>
-                  {Object.entries(
-                    coaOptions.reduce((acc, c) => {
-                      const agency = c.government_agencies?.name || "Other";
-                      (acc[agency] ??= []).push(c);
-                      return acc;
-                    }, {})
-                  ).map(([agency, accts]) => (
-                    <optgroup key={agency} label={agency}>
-                      {accts.map((c) => (
-                        <option key={c.id} value={c.id}>{c.account_name}</option>
-                      ))}
-                    </optgroup>
-                  ))}
-                </select>
+                  <select value={form.coa_id} onChange={(e) => handleSelectCoa(e.target.value)} className={inputCls}>
+                    <option value="">— Pumili ng account —</option>
+                    {Object.entries(
+                      coaOptions.reduce((acc, c) => {
+                        const agency = c.government_agencies?.name || "Other";
+                        (acc[agency] ??= []).push(c);
+                        return acc;
+                      }, {})
+                    ).map(([agency, accts]) => (
+                      <optgroup key={agency} label={agency}>
+                        {accts.map((c) => (
+                          <option key={c.id} value={c.id}>{c.account_name}</option>
+                        ))}
+                      </optgroup>
+                    ))}
+                  </select>
                 )}
                 <p className="mt-1 text-xs text-gray-400">
                   Ang listahan lang dito ay mga account na wala pang naka-link na tax computation.
@@ -520,117 +564,112 @@ export default function TaxSetup() {
                 </select>
               </div>
 
-          {form.computation_type === "fixed" && (
-  <div>
-    <label className={labelCls}>Default Amount (₱)</label>
-    <input
-      type="number"
-      step="0.01"
-      value={form.default_fixed_amount}
-      onChange={(e) => setForm((f) => ({ ...f, default_fixed_amount: e.target.value }))}
-      placeholder="0.00"
-      className={inputCls}
-    />
-  </div>
-)}
+              {form.computation_type === "fixed" && (
+                <div>
+                  <label className={labelCls}>Default Amount (₱)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={form.default_fixed_amount}
+                    onChange={(e) => setForm((f) => ({ ...f, default_fixed_amount: e.target.value }))}
+                    placeholder="0.00"
+                    className={inputCls}
+                  />
+                </div>
+              )}
 
-{form.computation_type === "percentage" && (
-  <PercentagePreview form={form} setForm={setForm} />
-)}
+              {form.computation_type === "percentage" && (
+                <PercentagePreview form={form} setForm={setForm} />
+              )}
 
-{form.computation_type === "table" && (
-  <TablePreview form={form} setForm={setForm} />
-)}
+              {form.computation_type === "table" && (
+                <TablePreview form={form} setForm={setForm} />
+              )}
 
-{form.computation_type === "manual" && (
-  <div className="grid grid-cols-2 gap-3">
-    <div>
-      <label className={labelCls}>Default Rate (%)</label>
-      <input
-        type="number"
-        step="0.01"
-        value={form.default_rate}
-        onChange={(e) => setForm((f) => ({ ...f, default_rate: e.target.value }))}
-        placeholder="0"
-        className={inputCls}
-      />
-    </div>
-    <div>
-      <label className={labelCls}>Default Amount (₱)</label>
-      <input
-        type="number"
-        step="0.01"
-        value={form.default_fixed_amount}
-        onChange={(e) => setForm((f) => ({ ...f, default_fixed_amount: e.target.value }))}
-        placeholder="0.00"
-        className={inputCls}
-      />
-    </div>
-  </div>
-)}
+              {form.computation_type === "manual" && (
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className={labelCls}>Default Rate (%)</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={form.default_rate}
+                      onChange={(e) => setForm((f) => ({ ...f, default_rate: e.target.value }))}
+                      placeholder="0"
+                      className={inputCls}
+                    />
+                  </div>
+                  <div>
+                    <label className={labelCls}>Default Amount (₱)</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={form.default_fixed_amount}
+                      onChange={(e) => setForm((f) => ({ ...f, default_fixed_amount: e.target.value }))}
+                      placeholder="0.00"
+                      className={inputCls}
+                    />
+                  </div>
+                </div>
+              )}
 
-              <div className="flex items-center justify-between pt-2">
+              <div className="flex items-center justify-between pt-1">
                 <span className="text-sm text-gray-600">Active</span>
                 <button
+                  type="button"
                   onClick={() => setForm((f) => ({ ...f, is_active: !f.is_active }))}
                   className="flex items-center"
                 >
                   {form.is_active ? (
-                    <FaToggleOn size={22} style={{ color: "#1a5c2e" }} />
+                    <ToggleRight size={26} strokeWidth={1.5} className="text-gray-900" />
                   ) : (
-                    <FaToggleOff size={22} className="text-gray-300" />
+                    <ToggleLeft size={26} strokeWidth={1.5} className="text-gray-300" />
                   )}
                 </button>
               </div>
             </div>
 
-            <div className="flex justify-end gap-2 px-5 py-3.5 border-t border-gray-100 shrink-0">
-              <button
-                onClick={closeForm}
-                className="px-4 py-2 text-sm font-medium text-gray-600 transition border border-gray-200 rounded-md hover:bg-gray-50"
-              >
+            <div className="flex justify-end gap-2 px-6 py-4 border-t border-gray-100 shrink-0">
+              <button type="button" onClick={closeForm} disabled={saving} className={btnGhost}>
                 Cancel
               </button>
               <button
-                onClick={handleSave}
+                type="submit"
                 disabled={saving || (!form.id && !form.coa_id)}
-                className="flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white transition rounded-md disabled:opacity-50"
-                style={{ background: "#1a5c2e" }}
+                className={btnPrimary}
               >
-                <FaCheckCircle size={11} />
-                {saving ? "Saving..." : "Save"}
+                {saving ? "Saving..." : form.id ? "Save Changes" : "Save"}
               </button>
             </div>
-          </div>
-        </div>
+          </form>
+        </Modal>
       )}
 
-      {/* ── DELETE CONFIRM ── */}
+      {/* Delete modal */}
       {deletingRow && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-          <div className="w-full max-w-sm p-5 bg-white shadow-2xl rounded-xl">
-            <h3 className="mb-1 text-sm font-semibold text-gray-800">Alisin ang tax config?</h3>
-            <p className="mb-4 text-sm text-gray-500">
-              <strong>{deletingRow.label}</strong> ay permanenteng matatanggal, at ang naka-link na account
-              ay babalik sa "unlinked" state (magagamit ulit sa dropdown). Hindi mata-touch ang existing
-              client tax data — ipapayo lang na i-review yun.
+        <Modal
+          title="Alisin ang tax config?"
+          subtitle="This action cannot be undone."
+          onClose={() => setDeletingRow(null)}
+        >
+          <div className="px-6 py-5">
+            <p className="px-3 py-2 mb-3 text-sm text-gray-700 border border-gray-200 rounded-md bg-gray-50">
+              {deletingRow.label}
+            </p>
+            <p className="mb-5 text-xs text-gray-500">
+              Ang naka-link na account ay babalik sa "unlinked" state (magagamit ulit sa dropdown).
+              Hindi mata-touch ang existing client tax data — ipapayo lang na i-review iyon.
             </p>
             <div className="flex justify-end gap-2">
-              <button
-                onClick={() => setDeletingRow(null)}
-                className="px-4 py-2 text-sm font-medium text-gray-600 transition border border-gray-200 rounded-md hover:bg-gray-50"
-              >
+              <button onClick={() => setDeletingRow(null)} disabled={deleteSaving} className={btnGhost}>
                 Cancel
               </button>
-              <button
-                onClick={handleDelete}
-                className="px-4 py-2 text-sm font-semibold text-white transition bg-red-500 rounded-md hover:bg-red-600"
-              >
-                Delete
+              <button onClick={handleDelete} disabled={deleteSaving} className={btnDanger}>
+                {deleteSaving ? "Deleting..." : <><Trash2 size={14} /> Delete</>}
               </button>
             </div>
           </div>
-        </div>
+        </Modal>
       )}
     </div>
   );
