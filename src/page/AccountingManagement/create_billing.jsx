@@ -17,6 +17,7 @@ import {
 } from "react-icons/fa";
 import { LOGO_B64 } from "../../logo_b64";
 import { useApprovalPermission } from "../../hooks/approval_permission";
+import { completeActiveTask, getActiveTask } from "../../lib/task_completion";
 
 function fmt(n) {
   return Number(n || 0).toLocaleString("en-PH", {
@@ -643,7 +644,8 @@ export default function CreateBilling({ currentUser }) {
     setClientSearch(getClientPrimaryName(c));
     setShowClientDrop(false);
     setClientResults([]);
-
+  
+  // eslint-disable-line react-hooks/exhaustive-deps
     // NOTE: classification is pulled straight from this query's own nested
     // government_agencies → fee_groups.category — NOT from a separately
     // fetched lookup table. That's what makes it automatic and reliable
@@ -714,15 +716,19 @@ export default function CreateBilling({ currentUser }) {
     }
   };
 
+  
   const clearClient = () => {
     setSelectedClient(null);
     setBillTo("");
     setAddress("");
     setClientSearch("");
   };
+useEffect(() => {
+  const t = getActiveTask();
+  if (t?.task_type === "create_billing" && t.target_client) selectClient(t.target_client);
+}, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const [agencies, setAgencies] = useState([]);
-
+const [agencies, setAgencies] = useState([]);
   const [periods, setPeriods] = useState([]);
 
   const fetchPeriods = useCallback(async () => {
@@ -1041,9 +1047,10 @@ export default function CreateBilling({ currentUser }) {
     try {
       const bill = await upsertBilling("pending_approval", filledItems);
       setSoaStatus("pending_approval");
-      setMessage("SOA submitted for approval.");
+        setMessage("SOA submitted for approval.");
       setMessageType("success");
       setSavedBilling(buildSnapshot(filledItems));
+      await completeActiveTask("create_billing", bill.soa_number);
 
       // Notify approvers (hindi dapat mag-fail ang submit kahit pumalpak ito)
          try {
@@ -1140,10 +1147,10 @@ export default function CreateBilling({ currentUser }) {
 
     setApproving(true);
     try {
-          const bill = await upsertBilling("approved", filledItems);
+        const bill = await upsertBilling("approved", filledItems);
       setSoaStatus("approved");
       await notifyCreatorApproved(bill);
-
+      await completeActiveTask("create_billing", bill.soa_number);
       // Generate the styled HTML email body
       const htmlBody = buildSOAEmailHTML({
         clientFirstName:
@@ -1230,8 +1237,8 @@ export default function CreateBilling({ currentUser }) {
     setShowApproveDrop(false);
     try {
       const bill = await upsertBilling("approved", filledItems);
-      setSoaStatus("approved");
-      await notifyCreatorApproved(bill);
+       await notifyCreatorApproved(bill);
+      await completeActiveTask("create_billing", bill.soa_number);
       setMessage("SOA approved successfully.");
       setMessageType("success");
     } catch (err) {

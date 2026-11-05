@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { supabase } from "../../lib/supabaseClient";
+import { completeActiveTask } from "../../lib/task_completion";
 import {
   FaSearch,
   FaTimes,
@@ -843,9 +844,10 @@ const bumpFundPools = async ({ incomeAlloc, remittanceAlloc }) => {
         }
       }
 
-      setMessage(`Invoice ${invoiceNumber} recorded successfully.`);
+          setMessage(`Invoice ${invoiceNumber} recorded successfully.`);
       setMessageType("success");
       onSaved?.(data);
+      await completeActiveTask("record_payment", data.invoice_number, data.client_id);
 
       await fetchOutstandingSOAs(selectedClient);
       await fetchClientCredit(selectedClient);

@@ -5,25 +5,20 @@ import {
     FaUsers,
     FaMoneyBillWave,
     FaMoneyCheckAlt,
-    FaCalculator,
     FaCoins,
-    FaFolder,
-    FaCheck,
     FaChartBar,
     FaCog,
     FaChevronDown,
     FaFileAlt,
     FaCreditCard,
     FaHistory,
-    FaClipboardList,
     FaSignInAlt,
     FaUserShield,
-    FaTools,
     FaUser,
     FaClipboardCheck,
-    FaExclamationTriangle,
     FaChartLine,    
-    FaAddressBook
+    FaAddressBook,
+    FaTasks
 } from 'react-icons/fa';
 import ReactDOM from 'react-dom';
 import Swal from 'sweetalert2';
@@ -37,6 +32,11 @@ export const getAllMenuItems = () => [
         icon: <FaTachometerAlt />,
         label: 'Dashboard',
         path: 'dashboard'
+    },
+     {
+        icon: <FaTasks />,
+        label: 'Job Posting',
+        path: 'JobPosting'
     },
     {
         icon: <FaUser />,

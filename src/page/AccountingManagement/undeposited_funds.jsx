@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { supabase } from "../../lib/supabaseClient";
 import { FaMoneyBillWave, FaCheckCircle } from "react-icons/fa";
+import { completeActiveTask } from "../../lib/task_completion";
 
 const RECEIVING_BANKS = [
   { value: "bdo", label: "BDO" },
@@ -57,7 +58,8 @@ export default function UndepositedFunds({ currentUser }) {
           deposit_batch_id: batchId,
         })
         .in("id", Array.from(selected));
-      if (error) throw error;
+        if (error) throw error;
+      await completeActiveTask("undeposited_funds", batchId);
       setSelected(new Set());
       await fetchUndeposited();
     } catch (err) {

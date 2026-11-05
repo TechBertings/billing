@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from "react";
+import DateRangePicker from "../../components/date_range_picker";
+import { fmtDate, presetRange } from "../../utils/data_range";
 import { supabase } from "../../lib/supabaseClient";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
@@ -60,15 +62,13 @@ function fmt(n) {
     maximumFractionDigits: 2,
   });
 }
-function fmtDate(d) {
-  if (!d) return "—";
-  return new Date(d).toLocaleDateString("en-PH", { year: "numeric", month: "short", day: "2-digit" });
-}
 // Built from plain numbers (not toISOString) so the last day isn't shifted back by the timezone
 function lastDayOfMonth(year, month) {
   const d = new Date(year, month, 0).getDate();
   return `${year}-${String(month).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
 }
+
+
 function daysOverdue(dueDate) {
   if (!dueDate) return 0;
   return Math.floor((new Date() - new Date(dueDate)) / (1000 * 60 * 60 * 24));
@@ -673,6 +673,7 @@ function GroupModal({ group, groupBy, onClose, onOpenReceipt, receiptOpen }) {
     </Modal>
   );
 }
+
 // Small segmented toggle used by the Collections Report filters
 function Pills({ value, onChange, options }) {
   return (
@@ -693,7 +694,7 @@ function Pills({ value, onChange, options }) {
 }
 
 // ── Tab 1: Collections Report — pick a client first, then view that client's receipts ──
-function CollectionsReport({ month, year }) {
+function CollectionsReport({ dateFrom, dateTo }) {
   // client picker
   const [clientQuery, setClientQuery] = useState("");
   const [clientResults, setClientResults] = useState([]);
@@ -767,11 +768,11 @@ useEffect(() => {
 
   // ── Fetch receipts for the selected client + period ──
   const load = useCallback(async () => {
-    if (!client) return;
+    if (!client || !dateFrom || !dateTo) return;
     setLoading(true);
     try {
-      const startDate = `${year}-${String(month).padStart(2, "0")}-01`;
-      const endDate = lastDayOfMonth(year, month);
+const startDate = dateFrom;
+const endDate = dateTo;
 
       const rowsData = await fetchAll(() =>
         supabase
@@ -797,7 +798,7 @@ useEffect(() => {
       setReceipts([]);
     }
     setLoading(false);
-  }, [client, month, year]);
+}, [client, dateFrom, dateTo]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -850,9 +851,13 @@ const showRem = typeFilter !== "income";
 
   // ── Export ──
   const typeText = { all: "Income & Remittance", income: "Income only", remittance: "Remittance only" }[typeFilter];
-  const subtitle = client
-    ? `${client.name} · ${MONTHS[month - 1]} ${year} · ${typeText}${methodFilter !== "all" ? ` · ${methodFilter}` : ""}`
-    : "";
+const periodText =
+  dateFrom === dateTo ? fmtDate(dateFrom) : `${fmtDate(dateFrom)} – ${fmtDate(dateTo)}`;
+
+
+const subtitle = client
+  ? `${client.name} · ${periodText} · ${typeText}${methodFilter !== "all" ? ` · ${methodFilter}` : ""}`
+  : "";
 
   const headers = [
     "Date",
@@ -887,8 +892,8 @@ const showRem = typeFilter !== "income";
     "",
   ];
   const safeName = (client?.name || "client").replace(/[^a-z0-9]+/gi, "-").toLowerCase();
-  const fileBase = `collections-${safeName}-${typeFilter}-${year}-${String(month).padStart(2, "0")}`;
-  const th = "px-3 py-2 font-medium";
+const fileBase = `collections-${safeName}-${typeFilter}-${dateFrom}_to_${dateTo}`;  
+const th = "px-3 py-2 font-medium";
   const emptyCols = 5 + (showInc ? 1 : 0) + (showRem ? 1 : 0);
 
   return (
@@ -1151,27 +1156,41 @@ const showRem = typeFilter !== "income";
 }
 
 // ── Tab 2: Bank Reconciliation Summary — status of every bank_reconciliations row for the period ──
-function BankReconciliationSummary({ month, year }) {
+// ── Tab 2: Bank Reconciliation Summary — status of every bank_reconciliations row in the date range ──
+function BankReconciliationSummary({ dateFrom, dateTo }) {
   const [loading, setLoading] = useState(false);
   const [recons, setRecons] = useState([]);
 
   const load = useCallback(async () => {
+    if (!dateFrom || !dateTo) return;
     setLoading(true);
     try {
+      const [fy, fm] = dateFrom.split("-").map(Number);
+      const [ty, tm] = dateTo.split("-").map(Number);
+      const fromIdx = fy * 12 + fm;
+      const toIdx = ty * 12 + tm;
+
       const { data, error } = await supabase
         .from("bank_reconciliations")
         .select("*")
-        .eq("month", month)
-        .eq("year", year)
+        .gte("year", fy)
+        .lte("year", ty)
+        .order("year", { ascending: true })
+        .order("month", { ascending: true })
         .order("bank_name", { ascending: true });
       if (error) throw error;
-      setRecons(data || []);
+
+      // keep only the months touched by the selected range
+      setRecons((data || []).filter((r) => {
+        const idx = Number(r.year) * 12 + Number(r.month);
+        return idx >= fromIdx && idx <= toIdx;
+      }));
     } catch (err) {
       console.error("Error loading bank reconciliation summary:", err.message);
       setRecons([]);
     }
     setLoading(false);
-  }, [month, year]);
+  }, [dateFrom, dateTo]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -1180,10 +1199,14 @@ function BankReconciliationSummary({ month, year }) {
     [recons],
   );
 
-  const subtitle = `${MONTHS[month - 1]} ${year}`;
-  const headers = ["Bank", "Account No.", "Beginning Balance", "Statement Balance", "Reconciled"];
+  const periodLabel = (r) => `${MONTHS[r.month - 1]} ${r.year}`;
+  const subtitle =
+    dateFrom === dateTo ? fmtDate(dateFrom) : `${fmtDate(dateFrom)} – ${fmtDate(dateTo)}`;
+  const fileBase = `bank-reconciliation-summary-${dateFrom}_to_${dateTo}`;
+
+  const headers = ["Period", "Bank", "Account No.", "Beginning Balance", "Statement Balance", "Reconciled"];
   const csvRows = recons.map((r) => [
-    r.bank_name, r.account_no || "", fmt(r.beginning_balance), fmt(r.bank_statement_balance), r.is_reconciled ? "Yes" : "No",
+    periodLabel(r), r.bank_name, r.account_no || "", fmt(r.beginning_balance), fmt(r.bank_statement_balance), r.is_reconciled ? "Yes" : "No",
   ]);
   const pdfRows = csvRows;
 
@@ -1192,10 +1215,10 @@ function BankReconciliationSummary({ month, year }) {
       <div className="flex items-center justify-end print:hidden">
         <ReportActions
           disabled={recons.length === 0}
-          onExportCsv={() => downloadCsv(`bank-reconciliation-summary-${year}-${String(month).padStart(2, "0")}.csv`, headers, csvRows)}
+          onExportCsv={() => downloadCsv(`${fileBase}.csv`, headers, csvRows)}
           onExportPdf={() =>
             downloadPdf({
-              filename: `bank-reconciliation-summary-${year}-${String(month).padStart(2, "0")}.pdf`,
+              filename: `${fileBase}.pdf`,
               title: "Bank Reconciliation Summary",
               subtitle,
               headers,
@@ -1214,7 +1237,7 @@ function BankReconciliationSummary({ month, year }) {
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 print:hidden">
         <SummaryCard label="Bank Accounts on File" value={recons.length} />
         <SummaryCard label="Reconciled" value={recons.filter((r) => r.is_reconciled).length} accent={GREEN} />
-        <SummaryCard label="Total Beginning Balance" value={`\u20b1${fmt(totalCashBalance)}`} />
+        <SummaryCard label="Total Beginning Balance" value={`\u20b1${fmt(totalCashBalance)}`} hint="Sum of all rows shown" />
       </div>
 
       {loading ? (
@@ -1224,6 +1247,7 @@ function BankReconciliationSummary({ month, year }) {
           <table className="w-full text-xs">
             <thead className="text-gray-500 bg-gray-50">
               <tr>
+                <th className="px-3 py-2 font-medium text-left">Period</th>
                 <th className="px-3 py-2 font-medium text-left">Bank</th>
                 <th className="px-3 py-2 font-medium text-left">Account No.</th>
                 <th className="px-3 py-2 font-medium text-right">Beginning Bal.</th>
@@ -1233,10 +1257,11 @@ function BankReconciliationSummary({ month, year }) {
             </thead>
             <tbody>
               {recons.length === 0 ? (
-                <tr><td colSpan={5} className="py-6 text-center text-gray-400">No bank reconciliations found for this period.</td></tr>
+                <tr><td colSpan={6} className="py-6 text-center text-gray-400">No bank reconciliations found for this period.</td></tr>
               ) : (
                 recons.map((r) => (
                   <tr key={r.id} className="border-t border-gray-50">
+                    <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{periodLabel(r)}</td>
                     <td className="px-3 py-2 text-gray-800">{r.bank_name}</td>
                     <td className="px-3 py-2 font-mono text-gray-500">{r.account_no || "—"}</td>
                     <td className="px-3 py-2 font-mono text-right text-gray-700">{fmt(r.beginning_balance)}</td>
@@ -1883,21 +1908,22 @@ function AgingSummary() {
 
 // ── Main ──────────────────────────────────────────────────────────────
 const TABS = [
-  { key: "collections", label: "Collections Report", icon: <FaFileInvoiceDollar size={12} />, needsMonth: true },
-  { key: "bank", label: "Bank Reconciliation Summary", icon: <FaUniversity size={12} />, needsMonth: true },
-  { key: "revenue", label: "Revenue Summary", icon: <FaChartBar size={12} />, needsMonth: false },
+ { key: "collections", label: "Collections Report", icon: <FaFileInvoiceDollar size={12} />, needsMonth: false, needsRange: true, hideYear: true },
+{ key: "bank", label: "Bank Reconciliation Summary", icon: <FaUniversity size={12} />, needsMonth: false, needsRange: true, hideYear: true },  { key: "revenue", label: "Revenue Summary", icon: <FaChartBar size={12} />, needsMonth: false },
   { key: "aging", label: "AR Aging Summary", icon: <FaCoins size={12} />, needsMonth: false, hideYear: true },
 ];
 
 export default function FinancialReports() {
   const now = new Date();
-  const [month, setMonth] = useState(now.getMonth() + 1);
-  const [year, setYear] = useState(now.getFullYear());
-  const [activeTab, setActiveTab] = useState("collections");
+const [month, setMonth] = useState(now.getMonth() + 1);
+const [year, setYear] = useState(now.getFullYear());
+const [dateFrom, setDateFrom] = useState(() => presetRange("month")[0]);
+const [dateTo, setDateTo] = useState(() => presetRange("month")[1]);
+const [activeTab, setActiveTab] = useState("collections");
 
-  const tabMeta = TABS.find((t) => t.key === activeTab);
+const tabMeta = TABS.find((t) => t.key === activeTab);
 
-  return (
+return (
     <div className="min-h-screen bg-gray-50 print:bg-white">
       <div className="sticky top-0 z-10 px-6 py-4 bg-white border-b border-gray-200 print:hidden">
         <div className="flex items-center gap-3 mb-3">
@@ -1908,15 +1934,25 @@ export default function FinancialReports() {
         </div>
 
         <div className="flex flex-wrap items-end gap-3">
-          {tabMeta?.needsMonth && (
-            <div>
-              <label className={labelCls}>Month</label>
-              <select value={month} onChange={(e) => setMonth(Number(e.target.value))} className={`${inputCls} w-40`}>
-                {MONTHS.map((m, i) => <option key={m} value={i + 1}>{m}</option>)}
-              </select>
-            </div>
-          )}
-          {!tabMeta?.hideYear && (
+      {tabMeta?.needsMonth && (
+  <div>
+    <label className={labelCls}>Month</label>
+    <select value={month} onChange={(e) => setMonth(Number(e.target.value))} className={`${inputCls} w-40`}>
+      {MONTHS.map((m, i) => <option key={m} value={i + 1}>{m}</option>)}
+    </select>
+  </div>
+)}
+{tabMeta?.needsRange && (
+  <DateRangePicker
+    from={dateFrom}
+    to={dateTo}
+    onChange={(f, t) => {
+      setDateFrom(f);
+      setDateTo(t);
+    }}
+  />
+)}
+{!tabMeta?.hideYear && (
             <div>
               <label className={labelCls}>Year</label>
               <input type="number" value={year} onChange={(e) => setYear(Number(e.target.value))} className={`${inputCls} w-24`} />
@@ -1941,8 +1977,8 @@ export default function FinancialReports() {
       </div>
 
       <div className="p-6 print:p-0">
-        {activeTab === "collections" && <CollectionsReport month={month} year={year} />}
-        {activeTab === "bank" && <BankReconciliationSummary month={month} year={year} />}
+        {activeTab === "collections" && <CollectionsReport dateFrom={dateFrom} dateTo={dateTo} />}
+        {activeTab === "bank" && <BankReconciliationSummary dateFrom={dateFrom} dateTo={dateTo} />}
         {activeTab === "revenue" && <RevenueSummary year={year} />}
         {activeTab === "aging" && <AgingSummary />}
       </div>

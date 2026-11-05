@@ -7,6 +7,7 @@ import Step3TaxRegistration  from "../../client_steps/step_3_tax_registration";
 import Step4AddressLocation  from "../../client_steps/step_4_address_location";
 import Step5OwnerDetails     from "../../client_steps/step_5_owner_details";
 import Step6ContactInfo      from "../../client_steps/step_6_contact_info";
+import ClientBulkImport      from "../../components/client_bulk_import"; // ← NEW
 
 
 // ─── INITIAL STATE ────────────────────────────────────────────────────────────
@@ -40,8 +41,6 @@ const initialForm = {
   corporation_signatory_type: "",
   sole_proprietor_signatory_type: "",
   registered_business_address: "",
-  renting: "No",
-  renting_rent_fee: "",
   rdo: "",
   district: "",
   zip_code: "",
@@ -102,9 +101,6 @@ const formatTIN = (val) => {
 };
 
 // ─── STEP BAR ─────────────────────────────────────────────────────────────────
-// Minimal, non-overflowing step indicator. Numbers + a thin connecting line;
-// labels are shown only for the active step so long labels (like "Government
-// Remittances") never get clipped at the edge of the container.
 const StepBar = ({ current, onStepClick }) => (
   <div className="mb-6">
     <div className="flex items-center w-full">
@@ -136,11 +132,9 @@ const StepBar = ({ current, onStepClick }) => (
                 {step.label}
               </span>
             </button>
+            {/* single connector (the duplicate was removed) */}
             {idx < STEPS.length - 1 && (
               <div className={`flex-1 h-px mx-1 md:mx-2 mb-7 transition-colors ${done ? "bg-teal-700" : "bg-slate-200"}`} />
-            )}
-            {idx < STEPS.length - 1 && (
-              <div className={`flex-1 h-px mx-1 md:mx-2 mb-4 md:mb-5 transition-colors ${done ? "bg-teal-700" : "bg-slate-200"}`} />
             )}
           </React.Fragment>
         );
@@ -151,6 +145,7 @@ const StepBar = ({ current, onStepClick }) => (
 
 // ─── MAIN ─────────────────────────────────────────────────────────────────────
 export default function ClientProfile() {
+  const [mode, setMode]           = useState("single"); // ← NEW: "single" | "bulk"
   const [formData, setFormData]   = useState({ ...initialForm, client_id_number: "Generating..." });
   const [step, setStep]           = useState(1);
   const [loading, setLoading]     = useState(false);
@@ -159,37 +154,38 @@ export default function ClientProfile() {
   const [mapInput, setMapInput]   = useState("");
   const [mapQuery, setMapQuery]   = useState("Philippines");
   const [ddLoading, setDdLoading] = useState(true);
-  const [dropdowns, setDropdowns] = useState({
-    status: [], business_registration: [], line_of_business: [],
-    tax_type: [], source_of_income: [], tax_payer_classification: [],
-    vat_type: [], account: [],
-  });
+ const [dropdowns, setDropdowns] = useState({
+  status: [], business_registration: [], line_of_business: [],
+  tax_type: [], source_of_income: [], tax_payer_classification: [],
+  vat_type: [], account: [], 
+});
 
   // Fetch dropdowns
   useEffect(() => {
     const fetchDropdowns = async () => {
       setDdLoading(true);
       try {
-        const [stat, br, lob, tt, soi, tpc, vt, acct, rf] = await Promise.all([
-          supabase.from("status").select("id, status").order("id"),
-          supabase.from("business_registration").select("id, business_registration").order("id"),
-          supabase.from("line_of_business").select("id, line_of_business").order("id"),
-          supabase.from("tax_type").select("id, tax_type").order("id"),
-          supabase.from("source_of_income").select("id, source_of_income").order("id"),
-          supabase.from("tax_payer_classification").select("id, tax_payer_classification").order("id"),
-          supabase.from("vat_type").select("id, vat_type").order("id"),
-          supabase.from("account").select("id, account").order("account"),
-        ]);
-        setDropdowns({
-          status: stat.data || [],
-          business_registration: br.data || [],
-          line_of_business: lob.data || [],
-          tax_type: tt.data || [],
-          source_of_income: soi.data || [],
-          tax_payer_classification: tpc.data || [],
-          vat_type: vt.data || [],
-          account: acct.data || [],
-        });
+    const [stat, br, lob, tt, soi, tpc, vt, acct] = await Promise.all([
+  supabase.from("status").select("id, status").order("id"),
+  supabase.from("business_registration").select("id, business_registration").order("id"),
+  supabase.from("line_of_business").select("id, line_of_business").order("id"),
+  supabase.from("tax_type").select("id, tax_type").order("id"),
+  supabase.from("source_of_income").select("id, source_of_income").order("id"),
+  supabase.from("tax_payer_classification").select("id, tax_payer_classification").order("id"),
+  supabase.from("vat_type").select("id, vat_type").order("id"),
+  supabase.from("account").select("id, account").order("account"),
+]);
+setDropdowns({
+  status: stat.data || [],
+  business_registration: br.data || [],
+  line_of_business: lob.data || [],
+  tax_type: tt.data || [],
+  source_of_income: soi.data || [],
+  tax_payer_classification: tpc.data || [],
+  vat_type: vt.data || [],
+  account: acct.data || [],
+
+});
       } catch (err) {
         console.error(err);
       } finally {
@@ -199,7 +195,7 @@ export default function ClientProfile() {
     fetchDropdowns();
   }, []);
 
-  // ✅ CHANGE 1: Auto-set status to "Existing" after dropdowns load
+  // Auto-set status after dropdowns load
   useEffect(() => {
     if (!ddLoading && dropdowns.status.length > 0) {
       setFormData((p) => ({ ...p, status: p.status || "Active" }));
@@ -224,7 +220,6 @@ export default function ClientProfile() {
       setFormData((p) => ({ ...p, tin: formatTIN(value) }));
 
     } else if (name === "business_registration") {
-      // ✅ CHANGE 3: Auto-set entity_type from business_registration
       const entityType =
         value === "Sole Proprietor" ? "Sole Proprietor"
         : value ? "Corporation"
@@ -233,7 +228,6 @@ export default function ClientProfile() {
         ...p,
         business_registration: value,
         entity_type: entityType,
-        // Reset name fields when registration type changes
         business_name: "",
         first_name: "",
         middle_name: "",
@@ -250,40 +244,51 @@ export default function ClientProfile() {
     setFormData({ ...initialForm, client_id_number: "Generating..." });
     setMapInput(""); setMapQuery("Philippines"); setStep(1); setMessage("");
     generateNextID().then((id) =>
-      setFormData((p) => ({ ...p, client_id_number: id, status: "Existing" }))
+      setFormData((p) => ({ ...p, client_id_number: id, status: "Active" }))
     );
   };
 
   const isValidEmail = (email) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
 
-  // Convert an amount field to a number for storage, or null if left blank.
-  const parseMoney = (val) => {
-    if (val === "" || val === null || val === undefined) return null;
-    const n = parseFloat(val);
-    return isNaN(n) ? null : n;
-  };
+
+  const BUSINESS_REG_STEP = 2; // step kung nasaan ang Business Registration field
+
+const goToStep = (target) => {
+  if (target > BUSINESS_REG_STEP && !formData.business_registration) {
+    setMessage("❌ Business Registration is required. Please select one before proceeding.");
+    setMessageType("error");
+    setStep(BUSINESS_REG_STEP);
+    return;
+  }
+  setMessage("");
+  setStep(target);
+};
 
   // ─── SUBMIT ─────────────────────────────────────────────────────────────────
-  const handleSubmit = async () => {
-  // ✅ Required email validation
+ const handleSubmit = async () => {
+  if (!formData.business_registration) {
+    setMessage("❌ Business Registration is required.");
+    setMessageType("error");
+    setStep(BUSINESS_REG_STEP);
+    return;
+  }
   if (!formData.email_address || !formData.email_address.trim()) {
-    setMessage("❌ Email Address is required. Please go to Step 6 (Contact Info) and enter a valid email.");
-    setMessageType("error");
-    setStep(6);
-    return;
-  }
-  if (!isValidEmail(formData.email_address)) {
-    setMessage("❌ Please enter a valid email address (e.g. name@example.com).");
-    setMessageType("error");
-    setStep(6);
-    return;
-  }
+      setMessage("❌ Email Address is required. Please go to Step 6 (Contact Info) and enter a valid email.");
+      setMessageType("error");
+      setStep(6);
+      return;
+    }
+    if (!isValidEmail(formData.email_address)) {
+      setMessage("❌ Please enter a valid email address (e.g. name@example.com).");
+      setMessageType("error");
+      setStep(6);
+      return;
+    }
     setLoading(true);
     setMessage("");
     try {
       const freshID = await generateNextID();
       const isSoleProp = formData.business_registration === "Sole Proprietor";
-
 
       const { error } = await supabase.from("client_profile").insert([{
         client_id: freshID,
@@ -292,8 +297,7 @@ export default function ClientProfile() {
         status: formData.status,
         business_registration: formData.business_registration,
         line_of_business: formData.line_of_business,
-        
-        // ✅ CHANGE 2: Combine first/mid/last for sole prop
+
         business_name: isSoleProp
           ? `${formData.first_name} ${formData.middle_name} ${formData.last_name}`.replace(/\s+/g, " ").trim()
           : formData.business_name,
@@ -316,8 +320,6 @@ export default function ClientProfile() {
         corporation_signatory_type: formData.corporation_signatory_type,
         sole_proprietor_signatory_type: formData.sole_proprietor_signatory_type,
         registered_business_address: formData.registered_business_address,
-        renting: formData.renting,
-        renting_rent_fee: formData.renting_rent_fee || null,
         rdo: formData.rdo,
         district: formData.district,
         zip_code: formData.zip_code,
@@ -339,7 +341,7 @@ export default function ClientProfile() {
         official_office_contact_number: formData.official_office_contact_number,
         annual_meeting_date: formData.annual_meeting_date || null,
         president_name: formData.president_name,
-        corporate_secretary_name: formData.corporate_secretary_name,    
+        corporate_secretary_name: formData.corporate_secretary_name,
         approval_status: "pending",
         account: formData.account || null,
       }]);
@@ -362,8 +364,7 @@ export default function ClientProfile() {
       case 1: return <Step1CoverageStatus formData={formData} handleChange={handleChange} dropdowns={dropdowns} ddLoading={ddLoading} />;
       case 2: return <Step2BusinessInfo   formData={formData} handleChange={handleChange} dropdowns={dropdowns} ddLoading={ddLoading} />;
       case 3: return <Step3TaxRegistration formData={formData} handleChange={handleChange} />;
-      case 4: return <Step4AddressLocation formData={formData} handleChange={handleChange} setFormData={setFormData} dropdowns={dropdowns} mapInput={mapInput} setMapInput={setMapInput} mapQuery={mapQuery} setMapQuery={setMapQuery} />;
-      case 5: return <Step5OwnerDetails   formData={formData} handleChange={handleChange} setFormData={setFormData} />;
+case 4: return <Step4AddressLocation formData={formData} handleChange={handleChange} setFormData={setFormData} mapInput={mapInput} setMapInput={setMapInput} mapQuery={mapQuery} setMapQuery={setMapQuery} />;      case 5: return <Step5OwnerDetails   formData={formData} handleChange={handleChange} setFormData={setFormData} />;
       case 6: return <Step6ContactInfo    formData={formData} handleChange={handleChange} />;
       default: return null;
     }
@@ -376,88 +377,114 @@ export default function ClientProfile() {
     <div className="min-h-screen bg-slate-50">
       <div className="w-full px-6 py-8 mx-auto max-w-none lg:px-12">
         {/* Header */}
-<div className="pb-5 mb-8 border-b border-slate-200">
+        <div className="pb-5 mb-8 border-b border-slate-200">
           <p className="text-[11px] font-semibold tracking-widest text-slate-400 uppercase mb-1">
             Client Onboarding
           </p>
           <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Client Profile</h1>
           <p className="mt-1 text-sm text-slate-500">
-            Complete all steps to submit client information for approval
+            {mode === "single"
+              ? "Complete all steps to submit client information for approval"
+              : "Add many clients at once from Excel, or export your client list"}
           </p>
-        </div>
-        <StepBar current={step} onStepClick={setStep} />
 
-        <div className="bg-white border rounded-lg border-slate-200">
-          {/* Step Title Bar — flat, minimal, no gradient */}
-<div className="flex items-center justify-between px-6 py-5 border-b border-slate-100 md:px-8 bg-slate-50/50">
-            <div>
-              <span className="text-[11px] font-semibold tracking-wider text-slate-400 uppercase">
-                Step {step} of {STEPS.length} — {STEPS[step - 1].label}
-              </span>
-              <h2 className="mt-1 text-lg font-semibold text-slate-900">
-                {STEPS[step - 1].label}
-              </h2>
-            </div>
-            <div className="hidden gap-1 sm:flex">
-              {STEPS.map((s) => (
-                <div key={s.id} className={`h-1 w-6 rounded-full transition-colors
-                  ${s.id <= step ? "bg-teal-700" : "bg-slate-200"}`} />
-              ))}
-            </div>
-          </div>
-
-          <div className="p-6 md:p-8">
-            {message && (
-              <div className={`mb-6 p-4 rounded-md border-l-4 text-sm
-                ${messageType === "success" ? "bg-emerald-50 border-emerald-500 text-emerald-700" : "bg-red-50 border-red-500 text-red-700"}`}>
-                {message}
-              </div>
-            )}
-
-            {renderStep()}
-
-            {/* Navigation */}
-            <div className="flex gap-4 pt-6 mt-10 border-t border-slate-100">
+          {/* NEW: mode toggle */}
+          <div className="flex gap-2 mt-4">
+            {[["single", "Add one client"], ["bulk", "Import / Export"]].map(([k, label]) => (
               <button
+                key={k}
                 type="button"
-                onClick={handleReset}
-                className="flex items-center gap-2 px-5 py-2.5 text-sm font-medium rounded-md bg-slate-100 hover:bg-slate-200 text-slate-700 transition"
+                onClick={() => setMode(k)}
+                className={`px-4 py-2 text-sm font-medium rounded-md border transition
+                  ${mode === k
+                    ? "bg-teal-700 border-teal-700 text-white"
+                    : "bg-white border-slate-200 text-slate-600 hover:bg-slate-50"}`}
               >
-                <FaTimes size={12} /> Reset
+                {label}
               </button>
-              <div className="flex gap-3 ml-auto">
-                {!isFirstStep && (
-                  <button
-                    type="button"
-                    onClick={() => setStep((s) => s - 1)}
-                    className="flex items-center gap-2 px-6 py-2.5 text-sm font-medium rounded-md border border-slate-200 hover:border-slate-300 hover:bg-slate-50 text-slate-700 transition"
-                  >
-                    <FaChevronLeft size={11} /> Back
-                  </button>
-                )}
-                {!isLastStep ? (
-                  <button
-                    type="button"
-                    onClick={() => setStep((s) => s + 1)}
-                    className="flex items-center gap-2 px-6 py-2.5 text-sm font-medium rounded-md bg-teal-700 hover:bg-teal-800 text-white transition"
-                  >
-                    Next <FaChevronRight size={11} />
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={handleSubmit}
-                    disabled={loading}
-                    className="flex items-center gap-2 px-8 py-2.5 text-sm font-medium rounded-md bg-teal-700 text-white transition hover:bg-teal-800 disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    <FaPaperPlane size={12} />
-                    {loading ? "Submitting..." : "Submit for Approval"}
-                  </button>
-                )}
-              </div>
-            </div>
+            ))}
           </div>
         </div>
+
+        {mode === "bulk" ? (
+          <ClientBulkImport dropdowns={dropdowns} ddLoading={ddLoading} />
+        ) : (
+          <>
+            <StepBar current={step} onStepClick={goToStep} />
+
+            <div className="bg-white border rounded-lg border-slate-200">
+              {/* Step Title Bar */}
+              <div className="flex items-center justify-between px-6 py-5 border-b border-slate-100 md:px-8 bg-slate-50/50">
+                <div>
+                  <span className="text-[11px] font-semibold tracking-wider text-slate-400 uppercase">
+                    Step {step} of {STEPS.length} — {STEPS[step - 1].label}
+                  </span>
+                  <h2 className="mt-1 text-lg font-semibold text-slate-900">
+                    {STEPS[step - 1].label}
+                  </h2>
+                </div>
+                <div className="hidden gap-1 sm:flex">
+                  {STEPS.map((s) => (
+                    <div key={s.id} className={`h-1 w-6 rounded-full transition-colors
+                      ${s.id <= step ? "bg-teal-700" : "bg-slate-200"}`} />
+                  ))}
+                </div>
+              </div>
+
+              <div className="p-6 md:p-8">
+                {message && (
+                  <div className={`mb-6 p-4 rounded-md border-l-4 text-sm
+                    ${messageType === "success" ? "bg-emerald-50 border-emerald-500 text-emerald-700" : "bg-red-50 border-red-500 text-red-700"}`}>
+                    {message}
+                  </div>
+                )}
+
+                {renderStep()}
+
+                {/* Navigation */}
+                <div className="flex gap-4 pt-6 mt-10 border-t border-slate-100">
+                  <button
+                    type="button"
+                    onClick={handleReset}
+                    className="flex items-center gap-2 px-5 py-2.5 text-sm font-medium rounded-md bg-slate-100 hover:bg-slate-200 text-slate-700 transition"
+                  >
+                    <FaTimes size={12} /> Reset
+                  </button>
+                  <div className="flex gap-3 ml-auto">
+                    {!isFirstStep && (
+                      <button
+                        type="button"
+                        onClick={() => setStep((s) => s - 1)}
+                        className="flex items-center gap-2 px-6 py-2.5 text-sm font-medium rounded-md border border-slate-200 hover:border-slate-300 hover:bg-slate-50 text-slate-700 transition"
+                      >
+                        <FaChevronLeft size={11} /> Back
+                      </button>
+                    )}
+                    {!isLastStep ? (
+                      <button
+                        type="button"
+                        onClick={() => goToStep(step + 1)}
+                        className="flex items-center gap-2 px-6 py-2.5 text-sm font-medium rounded-md bg-teal-700 hover:bg-teal-800 text-white transition"
+                      >
+                        Next <FaChevronRight size={11} />
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={handleSubmit}
+                        disabled={loading}
+                        className="flex items-center gap-2 px-8 py-2.5 text-sm font-medium rounded-md bg-teal-700 text-white transition hover:bg-teal-800 disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        <FaPaperPlane size={12} />
+                        {loading ? "Submitting..." : "Submit for Approval"}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );

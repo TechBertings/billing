@@ -450,7 +450,7 @@ const RolePermissions = ({ selectedRole, onClose }) => {
           <div className="grid grid-cols-4 gap-4">
             {[
               { label: 'View',   desc: 'Can access and see the page' },
-              { label: 'Create', desc: 'Can add records (also used as Approve flag)' },
+              { label: 'Create', desc: 'Can add records (also used as Approve flag; Assign Task sa Job Posting)' },
               { label: 'Edit',   desc: 'Can modify existing records' },
               { label: 'Delete', desc: 'Can remove records' },
             ].map(({ label, desc }) => (

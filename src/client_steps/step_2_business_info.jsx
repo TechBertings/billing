@@ -8,7 +8,13 @@ export default function Step2BusinessInfo({ formData, handleChange, dropdowns, d
   return (
     <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
 
-      <Field label="Business Registration">
+      <Field
+  label={
+    <>
+      Business Registration <span className="text-red-500">*</span>
+    </>
+  }
+>
         <select
           name="business_registration"
           value={formData.business_registration}

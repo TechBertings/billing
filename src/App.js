@@ -34,6 +34,7 @@ import IncomeReportDeposited from './page/Reports/income_report';
 import ClientInformationReport from './page/Reports/client_information_report';
 import EmployeeInformationReport from './page/Reports/employee_information_report';
 import OperatingExpensesReport from './page/Reports/operating_expenses';
+import JobPosting from './page/JobPosting/job_posting';
 
 // ── Roles allowed to approve & send SOAs ──
 export const APPROVER_ROLES = ['Admin', 'Manager', 'Supervisor'];
@@ -185,6 +186,7 @@ function App() {
       case 'AuditTrail':                return <AuditTrail />;
       case 'ClientInformationReport':   return <ClientInformationReport />;
       case 'EmployeeInformationReport': return <EmployeeInformationReport />;
+      case 'JobPosting':                return <JobPosting />;
 
       case 'ReceivablesList':
         return (
