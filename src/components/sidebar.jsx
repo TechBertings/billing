@@ -91,9 +91,10 @@ export const getAllMenuItems = () => [
             // Disbursement
             { icon: <FaCoins />, label: 'Fund Request Report', path: 'FundRequestReports', group: 'Disbursement' },
 
-            // Records
+                     // Records
             { icon: <FaHistory />, label: 'Audit Trail', path: 'AuditTrail', group: 'Records' },
             { icon: <FaFileAlt />, label: 'Transmittal Report', path: 'TransmittalReport', group: 'Records' },
+            { icon: <FaHistory />, label: 'Transmittal History', path: 'TransmittalHistory', group: 'Records' },
 
                         // Client & Employee
             { icon: <FaAddressBook />, label: 'Client Information', path: 'ClientInformationReport', group: 'Client & Employee' },

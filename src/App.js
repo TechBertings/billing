@@ -23,6 +23,7 @@ import SOAApproval from './page/Approval/statement_of_account_approval';
 import ARAgingReport from './page/Reports/aging_reports';
 import FinancialReports from './page/Reports/financial_reports';
 import TransmittalReport from './page/Reports/document_management_transmittal_report';
+import TransmittalHistory from './page/Reports/transmittal_history';
 import ReceivablesList from './page/AccountingManagement/receivable_list';
 import UndepositedFunds from './page/AccountingManagement/undeposited_funds';
 import AuditTrail from './page/Reports/audit_trail';
@@ -182,7 +183,8 @@ function App() {
       case 'RemittancesPayables':       return <RemittancesPayables currentUser={currentUser} />;
       case 'IncomeReportDeposited':     return <IncomeReportDeposited />;
       case 'OperatingExpensesReport':   return <OperatingExpensesReport />;
-      case 'TransmittalReport':         return <TransmittalReport currentUser={currentUser} />;
+            case 'TransmittalReport':         return <TransmittalReport currentUser={currentUser} />;
+      case 'TransmittalHistory':        return <TransmittalHistory currentUser={currentUser} />;
       case 'AuditTrail':                return <AuditTrail />;
       case 'ClientInformationReport':   return <ClientInformationReport />;
       case 'EmployeeInformationReport': return <EmployeeInformationReport />;
